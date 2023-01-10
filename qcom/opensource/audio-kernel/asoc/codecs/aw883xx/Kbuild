@@ -118,6 +118,3 @@ aw883xx_dlkm-y := $(AW883XX_OBJS)
 
 #obj-$(CONFIG_SND_SOC_AW883XX_SLAVE) += aw883xx_slave_dlkm.o
 #aw883xx_slave_dlkm-y := $(AW883XX_SLAVE_OBJS)
-
-# inject some build related information
-DEFINES += -DBUILD_TIMESTAMP=\"$(shell date -u +'%Y-%m-%dT%H:%M:%SZ')\"
