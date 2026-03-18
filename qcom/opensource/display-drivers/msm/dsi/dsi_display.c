@@ -7193,6 +7193,14 @@ int dsi_display_get_modes_helper(struct dsi_display *display,
 			memcpy(sub_mode, &display_mode, sizeof(display_mode));
 			array_idx++;
 
+			sub_mode->priv_info = kmemdup(display_mode.priv_info,
+										  sizeof(*sub_mode->priv_info), GFP_KERNEL);
+			if (!sub_mode->priv_info)
+			{
+				rc = -ENOMEM;
+				return rc;
+			}
+
 			/*
 			 * Populate mode qsync min fps from panel min qsync fps dt property
 			 * in video mode & in command mode where per mode qsync min fps is
@@ -7208,13 +7216,6 @@ int dsi_display_get_modes_helper(struct dsi_display *display,
 			display_mode.priv_info->qsync_min_fps = sub_mode->timing.qsync_min_fps;
 			if (!dfps_caps.dfps_support || !support_video_mode)
 				continue;
-
-			sub_mode->priv_info = kmemdup(display_mode.priv_info,
-					sizeof(*sub_mode->priv_info), GFP_KERNEL);
-			if (!sub_mode->priv_info) {
-				rc = -ENOMEM;
-				return rc;
-			}
 
 			rc = dsi_display_mode_dyn_clk_cpy(display,
 					&display_mode, sub_mode);
