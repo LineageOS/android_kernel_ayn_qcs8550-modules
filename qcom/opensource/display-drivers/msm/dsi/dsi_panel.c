@@ -1688,6 +1688,7 @@ static int dsi_panel_parse_cmd_host_config(struct dsi_cmd_engine_cfg *cfg,
 	if (rc) {
 		DSI_DEBUG("[%s] Fallback to default wr-mem-start\n", name);
 		cfg->wr_mem_start = 0x2C;
+		rc = 0;
 	} else {
 		cfg->wr_mem_start = val;
 	}
@@ -1698,6 +1699,7 @@ static int dsi_panel_parse_cmd_host_config(struct dsi_cmd_engine_cfg *cfg,
 	if (rc) {
 		DSI_DEBUG("[%s] Fallback to default wr-mem-continue\n", name);
 		cfg->wr_mem_continue = 0x3C;
+		rc = 0;
 	} else {
 		cfg->wr_mem_continue = val;
 	}
@@ -1711,6 +1713,7 @@ static int dsi_panel_parse_cmd_host_config(struct dsi_cmd_engine_cfg *cfg,
 	if (rc) {
 		DSI_DEBUG("[%s] fallback to default te-dcs-cmd\n", name);
 		cfg->insert_dcs_command = true;
+		rc = 0;
 	} else if (val == 1) {
 		cfg->insert_dcs_command = true;
 	} else if (val == 0) {
