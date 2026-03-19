@@ -959,6 +959,11 @@ int dsi_display_check_status(struct drm_connector *connector, void *display,
 
 	dsi_panel_acquire_panel_lock(panel);
 
+	if (!panel->esd_config.esd_enabled)
+	{
+		goto esd_disabled;
+	}
+
 	if (!panel->panel_initialized) {
 		DSI_DEBUG("Panel not initialized\n");
 		goto release_panel_lock;
@@ -1005,6 +1010,7 @@ int dsi_display_check_status(struct drm_connector *connector, void *display,
 		panel->esd_config.esd_enabled = false;
 	}
 
+esd_disabled:
 	if (rc <= 0 && te_check_override)
 		rc = dsi_display_status_check_te(dsi_display, te_rechecks);
 	if (rc > 0) {
