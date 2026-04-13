@@ -2157,6 +2157,43 @@ static int _sde_kms_setup_displays(struct drm_device *dev,
 		}
 	}
 
+	/*
+	 * Set possible_clones for all encoders so that writeback (Virtual)
+	 * encoders can share a CRTC with DSI/DP encoders for CWB
+	 * (concurrent writeback). Without this, drm_atomic_check_valid_clones()
+	 * rejects atomic commits that place both DSI and Virtual connectors
+	 * on the same CRTC, which breaks SDM's idle/CWB transitions.
+	 */
+	{
+		u32 wb_enc_mask = 0;
+		u32 disp_enc_mask = 0;
+
+		for (i = 0; i < priv->num_encoders; i++) {
+			encoder = priv->encoders[i];
+			if (!encoder)
+				continue;
+			if (encoder->encoder_type == DRM_MODE_ENCODER_VIRTUAL)
+				wb_enc_mask |= drm_encoder_mask(encoder);
+			else
+				disp_enc_mask |= drm_encoder_mask(encoder);
+		}
+
+		for (i = 0; i < priv->num_encoders; i++) {
+			encoder = priv->encoders[i];
+			if (!encoder)
+				continue;
+			if (encoder->encoder_type == DRM_MODE_ENCODER_VIRTUAL)
+				encoder->possible_clones =
+					wb_enc_mask | disp_enc_mask;
+			else
+				encoder->possible_clones =
+					drm_encoder_mask(encoder) | wb_enc_mask;
+		}
+
+		SDE_INFO("CWB possible_clones: wb_mask=0x%x disp_mask=0x%x\n",
+				wb_enc_mask, disp_enc_mask);
+	}
+
 	return 0;
 }
 
