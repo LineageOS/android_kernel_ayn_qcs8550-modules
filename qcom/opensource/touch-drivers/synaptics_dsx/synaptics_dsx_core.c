@@ -4285,6 +4285,8 @@ static void synaptics_register_for_panel_events(
 }
 #endif
 
+static void synaptics_rmi4_resume_work_fn(struct work_struct *work);
+
 static int synaptics_rmi4_probe(struct platform_device *pdev)
 {
 	int retval = 0;
@@ -4538,6 +4540,7 @@ static void synaptics_rmi4_defer_probe(struct work_struct *work)
 	INIT_WORK(&rmi4_data->reset_work, synaptics_rmi4_reset_work);
 	queue_work(rmi4_data->reset_workqueue, &rmi4_data->reset_work);
 #endif
+	INIT_WORK(&rmi4_data->resume_work, synaptics_rmi4_resume_work_fn);
 	rmi4_data->initialized = true;
 
 	return;
@@ -4699,6 +4702,16 @@ static int synaptics_rmi4_remove(struct platform_device *pdev)
 }
 
 #ifdef CONFIG_DRM
+static void synaptics_rmi4_resume_work_fn(struct work_struct *work)
+{
+	struct synaptics_rmi4_data *rmi4_data =
+			container_of(work, struct synaptics_rmi4_data,
+			resume_work);
+
+	synaptics_rmi4_regulator_configure(rmi4_data, true);
+	synaptics_rmi4_resume(&rmi4_data->pdev->dev);
+}
+
 static void synaptics_rmi4_dsi_panel_notifier_cb(
 		enum panel_event_notifier_tag tag,
 		struct panel_event_notification *notification,
@@ -4724,8 +4737,7 @@ static void synaptics_rmi4_dsi_panel_notifier_cb(
 	switch (notification->notif_type) {
 	case DRM_PANEL_EVENT_UNBLANK:
 		if (rmi4_data->initialized) {
-			synaptics_rmi4_regulator_configure(rmi4_data, true);
-			synaptics_rmi4_resume(&rmi4_data->pdev->dev);
+			schedule_work(&rmi4_data->resume_work);
 		} else {
 			complete(&rmi4_data->drm_init_done);
 		}
@@ -4733,6 +4745,7 @@ static void synaptics_rmi4_dsi_panel_notifier_cb(
 		break;
 	case DRM_PANEL_EVENT_BLANK:
 		if (rmi4_data->initialized) {
+			cancel_work_sync(&rmi4_data->resume_work);
 			synaptics_rmi4_suspend(&rmi4_data->pdev->dev);
 			synaptics_rmi4_regulator_configure(rmi4_data, false);
 		}
