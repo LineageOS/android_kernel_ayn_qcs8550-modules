@@ -6246,6 +6246,8 @@ error:
 	return rc;
 }
 
+static void disp_uevent_dev_unregister(struct notify_dev *sdev, struct class *switch_class);
+
 int dsi_display_drm_bridge_deinit(struct dsi_display *display)
 {
 	int rc = 0;
@@ -6256,6 +6258,9 @@ int dsi_display_drm_bridge_deinit(struct dsi_display *display)
 	}
 
 	mutex_lock(&display->display_lock);
+
+	if (display->ext_bridge_cnt > 0)
+		disp_uevent_dev_unregister(&display->notify_data, display->switch_class);
 
 	dsi_drm_bridge_cleanup(display->bridge);
 	display->bridge = NULL;
@@ -6500,6 +6505,120 @@ static void dsi_display_drm_ext_bridge_mode_set(
 	ext_bridge->orig_funcs->mode_set(bridge, &tmp, &tmp);
 }
 
+static ssize_t state_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	int ret;
+	struct notify_dev *sdev = (struct notify_dev *)
+		dev_get_drvdata(dev);
+
+	if (sdev->print_state) {
+		ret = sdev->print_state(sdev, buf);
+		if (ret >= 0)
+			return ret;
+	}
+	return sprintf(buf, "%d\n", sdev->state);
+}
+
+static ssize_t name_show(struct device *dev, struct device_attribute *attr,
+		char *buf)
+{
+	int ret;
+	struct notify_dev *sdev = (struct notify_dev *)
+		dev_get_drvdata(dev);
+
+	if (sdev->print_name) {
+		ret = sdev->print_name(sdev, buf);
+		if (ret >= 0)
+			return ret;
+	}
+	return sprintf(buf, "%s\n", sdev->name);
+}
+
+static DEVICE_ATTR_RO(state);
+static DEVICE_ATTR_RO(name);
+
+static int create_switch_class(struct class **switch_class, atomic_t *switch_count)
+{
+	if (!*switch_class) {
+		*switch_class = class_create(THIS_MODULE, "switch");
+		if (IS_ERR(*switch_class))
+			return PTR_ERR(*switch_class);
+		atomic_set(switch_count, 0);
+	}
+
+	return 0;
+}
+
+static int disp_uevent_dev_register(struct notify_dev *sdev, struct class **switch_class, atomic_t *switch_count)
+{
+	int ret;
+
+	if (!*switch_class) {
+		ret = create_switch_class(switch_class, switch_count);
+		if (ret != 0)
+			return ret;
+	}
+
+	sdev->index = atomic_inc_return(switch_count);
+	sdev->dev = device_create(*switch_class, NULL,
+			MKDEV(0, sdev->index), NULL, sdev->name);
+	if (IS_ERR(sdev->dev))
+		return PTR_ERR(sdev->dev);
+
+	ret = device_create_file(sdev->dev, &dev_attr_state);
+	if (ret < 0)
+		goto err_create_file_1;
+	ret = device_create_file(sdev->dev, &dev_attr_name);
+	if (ret < 0)
+		goto err_create_file_2;
+
+	dev_set_drvdata(sdev->dev, sdev);
+	sdev->state = 0;
+	return 0;
+
+err_create_file_2:
+	device_remove_file(sdev->dev, &dev_attr_state);
+err_create_file_1:
+	device_destroy(*switch_class, MKDEV(0, sdev->index));
+	printk(KERN_ERR "switch: Failed to register driver %s\n", sdev->name);
+	return ret;
+}
+
+static void disp_uevent_dev_unregister(struct notify_dev *sdev, struct class *switch_class)
+{
+	device_remove_file(sdev->dev, &dev_attr_name);
+	device_remove_file(sdev->dev, &dev_attr_state);
+	device_destroy(switch_class, MKDEV(0, sdev->index));
+	dev_set_drvdata(sdev->dev, NULL);
+}
+
+static int notify_uevent_user(struct notify_dev *sdev, int state)
+{
+	char name_buf[120];
+	char state_buf[120];
+	char *envp[3] = {name_buf, state_buf, NULL};
+
+	if (sdev == NULL)
+		return -1;
+
+	sdev->state = state;
+
+	snprintf(name_buf, sizeof(name_buf), "NAME=soc:qcom,msm-ext-disp");
+	snprintf(state_buf, sizeof(state_buf), "STATE=%s=%d", sdev->type, sdev->state);
+
+	kobject_uevent_env(&sdev->dev->kobj, KOBJ_CHANGE, envp);
+
+	return 0;
+}
+
+static void dsi_display_drm_ext_bridge_hpd_cb(void *data, enum drm_connector_status status)
+{
+	struct dsi_display *display = data;
+
+	notify_uevent_user(&display->notify_data, status == connector_status_connected);
+}
+
 static int dsi_host_ext_attach(struct mipi_dsi_host *host,
 			   struct mipi_dsi_device *dsi)
 {
@@ -6665,6 +6784,19 @@ int dsi_display_drm_ext_bridge_init(struct dsi_display *display,
 			ext_bridge_info->orig_funcs = ext_bridge->funcs;
 			ext_bridge->funcs = &ext_bridge_info->bridge_funcs;
 		}
+
+		display->notify_data.name = "hdmi_audio";
+		display->notify_data.type = NOTIFY_DEV_TYPE_HDMI;
+		display->notify_data.index = i;
+		display->notify_data.state = 0;
+		rc = disp_uevent_dev_register(&display->notify_data, &display->switch_class, &display->switch_count);
+		if (rc < 0) {
+			DSI_ERR("[%s] switch_dev_register failed, %d\n",
+				display->name, rc);
+			goto error;
+		}
+
+		drm_bridge_hpd_enable(ext_bridge, dsi_display_drm_ext_bridge_hpd_cb, display);
 
 		rc = drm_bridge_attach(encoder, ext_bridge, prev_bridge, 0);
 		if (rc) {
