@@ -133,6 +133,20 @@ struct dsi_display_ext_bridge {
 	struct drm_bridge_funcs bridge_funcs;
 };
 
+#define NOTIFY_DEV_TYPE_DP "DP"
+#define NOTIFY_DEV_TYPE_HDMI "HDMI"
+
+struct notify_dev {
+	const char *name;
+	const char *type;
+	struct device *dev;
+	int index;
+	int state;
+
+	ssize_t (*print_name)(struct notify_dev *sdev, char *buf);
+	ssize_t (*print_state)(struct notify_dev *sdev, char *buf);
+};
+
 /**
  * struct dsi_display - dsi display information
  * @pdev:             Pointer to platform device.
@@ -300,6 +314,9 @@ struct dsi_display {
 	struct dsi_panel_cmd_set cmd_set;
 
 	bool enabled;
+	struct notify_dev notify_data;
+	struct class *switch_class;
+	atomic_t switch_count;
 };
 
 int dsi_display_dev_probe(struct platform_device *pdev);
