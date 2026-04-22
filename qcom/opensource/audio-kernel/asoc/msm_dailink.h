@@ -412,3 +412,8 @@ SND_SOC_DAILINK_DEFS(iot_vc_sep_mi2s_rx,
 		),
 	DAILINK_COMP_ARRAY(COMP_PLATFORM("snd-soc-dummy")));
 
+SND_SOC_DAILINK_DEFS(hdmi_sec_mi2s_rx,
+	DAILINK_COMP_ARRAY(COMP_CPU("snd-soc-dummy-dai")),
+	DAILINK_COMP_ARRAY(COMP_CODEC("hdmi-audio-codec.1.auto", "i2s-hifi")),
+	DAILINK_COMP_ARRAY(COMP_PLATFORM("snd-soc-dummy")));
+
