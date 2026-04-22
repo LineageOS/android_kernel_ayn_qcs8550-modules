@@ -24,6 +24,9 @@
 #define DEFAULT_PANEL_JITTER_ARRAY_SIZE		2
 #define DEFAULT_PANEL_PREFILL_LINES	25
 
+#define VENDOR_BLOCK    0x03
+#define EDID_BASIC_AUDIO	(1 << 6)
+
 static struct dsi_display_mode_priv_info default_priv_info = {
 	.panel_jitter_numer = DEFAULT_PANEL_JITTER_NUMERATOR,
 	.panel_jitter_denom = DEFAULT_PANEL_JITTER_DENOMINATOR,
@@ -1116,38 +1119,96 @@ static void dsi_drm_update_dtd(struct edid *edid,
 
 static void dsi_drm_update_checksum(struct edid *edid)
 {
-	u8 *data = (u8 *)edid;
-	u32 i, sum = 0;
+	u32 i;
 
-	for (i = 0; i < EDID_LENGTH - 1; i++)
-		sum += data[i];
+	for (i = 0; i < 1 + edid->extensions; i++) {
+		u8 *data = (u8 *)&edid[i];
+		u32 j, sum = 0;
 
-	edid->checksum = 0x100 - (sum & 0xFF);
+		for (j = 0; j < EDID_LENGTH - 1; j++)
+			sum += data[j];
+
+		edid[i].checksum = 0x100 - (sum & 0xFF);
+	}
 }
 
 int dsi_connector_get_modes(struct drm_connector *connector, void *data,
 		const struct msm_resource_caps_info *avail_res)
 {
 	int rc, i;
-	u32 count = 0, edid_size;
+	u32 count = 0;
 	struct dsi_display_mode *modes = NULL;
 	struct drm_display_mode drm_mode;
 	struct dsi_display *display = data;
-	struct edid edid;
 	unsigned int width_mm = connector->display_info.width_mm;
 	unsigned int height_mm = connector->display_info.height_mm;
-	const u8 edid_buf[EDID_LENGTH] = {
-		0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x44, 0x6D,
-		0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x1B, 0x10, 0x01, 0x03,
-		0x80, 0x00, 0x00, 0x78, 0x0A, 0x0D, 0xC9, 0xA0, 0x57, 0x47,
-		0x98, 0x27, 0x12, 0x48, 0x4C, 0x00, 0x00, 0x00, 0x01, 0x01,
-		0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-		0x01, 0x01, 0x01, 0x01,
+	union {
+		struct edid edid;
+		u8 edid_raw[EDID_LENGTH * 2];
+	} edid = {
+		.edid = {
+			.header = { 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00 },
+			.mfg_id = { 0x44, 0x6D },
+			.prod_code = { 0x01, 0x00 },
+			.serial = 1,
+			.mfg_week = 27,
+			.mfg_year = 16,
+			.version = 1,
+			.revision = 3,
+			.input = 0x80,
+			.gamma = 0x78,
+			.features = 0x0A,
+			.red_green_lo = 0x0D,
+			.blue_white_lo = 0xC9,
+			.red_x = 0xA0,
+			.red_y = 0x57,
+			.green_x = 0x47,
+			.green_y = 0x98,
+			.blue_x = 0x27,
+			.blue_y = 0x12,
+			.white_x = 0x48,
+			.white_y = 0x4C,
+			.established_timings = {
+				.t1 = 0,
+				.t2 = 0,
+				.mfg_rsvd = 0,
+			},
+			.standard_timings = {
+				{
+					.hsize = 1,
+					.vfreq_aspect = 1,
+				},
+				{
+					.hsize = 1,
+					.vfreq_aspect = 1,
+				},
+				{
+					.hsize = 1,
+					.vfreq_aspect = 1,
+				},
+				{
+					.hsize = 1,
+					.vfreq_aspect = 1,
+				},
+				{
+					.hsize = 1,
+					.vfreq_aspect = 1,
+				},
+				{
+					.hsize = 1,
+					.vfreq_aspect = 1,
+				},
+				{
+					.hsize = 1,
+					.vfreq_aspect = 1,
+				},
+				{
+					.hsize = 1,
+					.vfreq_aspect = 1,
+				},
+			}
+		}
 	};
-
-	edid_size = min_t(u32, sizeof(edid), EDID_LENGTH);
-
-	memcpy(&edid, edid_buf, edid_size);
 
 	rc = dsi_display_get_mode_count(display, &count);
 	if (rc) {
@@ -1189,20 +1250,49 @@ int dsi_connector_get_modes(struct drm_connector *connector, void *data,
 		drm_mode_probed_add(connector, m);
 	}
 
-	rc = dsi_drm_update_edid_name(&edid, display->panel->name);
+	rc = dsi_drm_update_edid_name(&edid.edid, display->panel->name);
 	if (rc) {
 		count = 0;
 		goto end;
 	}
 
-	edid.width_cm = (connector->display_info.width_mm) / 10;
-	edid.height_cm = (connector->display_info.height_mm) / 10;
+	edid.edid.width_cm = (connector->display_info.width_mm) / 10;
+	edid.edid.height_cm = (connector->display_info.height_mm) / 10;
 
-	dsi_drm_update_dtd(&edid, modes, count);
-	dsi_drm_update_checksum(&edid);
-	rc =  drm_connector_update_edid_property(connector, &edid);
+	dsi_drm_update_dtd(&edid.edid, modes, count);
+
+	/*
+	 * This is kind of a hack.
+	 * Here we add hdmi vsdb extension.
+	 * We need to have this in the edid so the drm thinks that
+	 * we have a hdmi connector on the end.
+	 * This is due to many dsi-hdmi briges checks for 
+	 * connector.display_info.is_hdmi flag.
+	 * That flag is set based on hdmi vsdb being present
+	 * or not in the EDID.
+	 * If the flag is not set the bridge will work in DVI mode.
+	 * In DVI mode we have no audio output.
+	 */
+	if (display->panel->host_config.ext_bridge_mode) {
+		edid.edid.extensions = 1;
+		edid.edid_raw[EDID_LENGTH] = CEA_EXT;
+		edid.edid_raw[EDID_LENGTH + 1] = 3; // rev
+		edid.edid_raw[EDID_LENGTH + 2] = 10; // length
+		edid.edid_raw[EDID_LENGTH + 3] = EDID_BASIC_AUDIO;
+		edid.edid_raw[EDID_LENGTH + 4] = VENDOR_BLOCK << 5 | 5;
+		edid.edid_raw[EDID_LENGTH + 5] = (u8) (HDMI_IEEE_OUI);
+		edid.edid_raw[EDID_LENGTH + 6] = (u8) (HDMI_IEEE_OUI >> 8);
+		edid.edid_raw[EDID_LENGTH + 7] = (u8) (HDMI_IEEE_OUI >> 16);
+	}
+
+	dsi_drm_update_checksum(&edid.edid);
+	rc = drm_connector_update_edid_property(connector, &edid.edid);
 	if (rc)
 		count = 0;
+
+	if (display->ext_conn)
+		rc = drm_connector_update_edid_property(display->ext_conn, &edid.edid);
+
 	/*
 	 * DRM EDID structure maintains panel physical dimensions in
 	 * centimeters, we will be losing the precision anything below cm.
@@ -1211,6 +1301,11 @@ int dsi_connector_get_modes(struct drm_connector *connector, void *data,
 	 */
 	connector->display_info.width_mm = width_mm;
 	connector->display_info.height_mm = height_mm;
+
+	if (display->ext_conn) {
+		display->ext_conn->display_info.width_mm = width_mm;
+		display->ext_conn->display_info.height_mm = height_mm;
+	}
 end:
 	DSI_DEBUG("MODE COUNT =%d\n\n", count);
 	return count;
