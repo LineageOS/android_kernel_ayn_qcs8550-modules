@@ -566,6 +566,12 @@ static int dsi_panel_update_backlight(struct dsi_panel *panel,
 		dsi->mode_flags |= MIPI_DSI_MODE_LPM;
 	}
 
+	if (panel->pvgl_level_switch) {
+		rc = dsi_panel_tx_cmd_set(panel, (bl_lvl >= 300) ? DSI_CMD_SET_PVGL_7V9 : DSI_CMD_SET_PVGL_7V0);
+		if (rc)
+			DSI_ERR("[%s] failed to send DSI_CMD_SET_PVGL_7Vx cmds, rc=%d\n", panel->name, rc);
+	}
+
 	if (panel->bl_config.bl_inverted_dbv)
 		bl_lvl = (((bl_lvl & 0xff) << 8) | (bl_lvl >> 8));
 
@@ -1880,6 +1886,8 @@ const char *cmd_set_prop_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-post-mode-switch-on-command",
 	"qcom,mdss-dsi-qsync-on-commands",
 	"qcom,mdss-dsi-qsync-off-commands",
+	"qcom,mdss-dsi-pvgl-7v9-commands",
+	"qcom,mdss-dsi-pvgl-7v0-commands",
 };
 
 const char *cmd_set_state_map[DSI_CMD_SET_MAX] = {
@@ -1908,6 +1916,8 @@ const char *cmd_set_state_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-post-mode-switch-on-command-state",
 	"qcom,mdss-dsi-qsync-on-commands-state",
 	"qcom,mdss-dsi-qsync-off-commands-state",
+	"qcom,mdss-dsi-pvgl-7v9-commands-state",
+	"qcom,mdss-dsi-pvgl-7v0-commands-state",
 };
 
 int dsi_panel_get_cmd_pkt_count(const char *data, u32 length, u32 *cnt)
@@ -2211,6 +2221,9 @@ static int dsi_panel_parse_misc_features(struct dsi_panel *panel)
 
 	panel->reset_gpio_always_on = utils->read_bool(utils->data,
 			"qcom,platform-reset-gpio-always-on");
+
+	panel->pvgl_level_switch = utils->read_bool(utils->data,
+			"qcom,mdss-dsi-pvgl-level-switch");
 
 	panel->spr_info.enable = false;
 	panel->spr_info.pack_type = MSM_DISPLAY_SPR_TYPE_MAX;
