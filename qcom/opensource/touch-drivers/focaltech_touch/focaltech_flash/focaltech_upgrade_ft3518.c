@@ -40,7 +40,7 @@
 * Output:
 * Return: return 0 if success, otherwise return error code
 ***********************************************************************/
-static int fts_ft5452_upgrade(u8 *buf, u32 len)
+static int fts_ft5452_upgrade(struct fts_upgrade *upg, u8 *buf, u32 len)
 {
 	int ret = 0;
 	u32 start_addr = 0;
@@ -63,7 +63,7 @@ static int fts_ft5452_upgrade(u8 *buf, u32 len)
 	}
 
 	/* enter into upgrade environment */
-	ret = fts_fwupg_enter_into_boot();
+	ret = fts_fwupg_enter_into_boot(upg);
 	if (ret < 0) {
 		FTS_ERROR("enter into pramboot/bootloader fail,ret=%d", ret);
 		goto fw_reset;
@@ -71,7 +71,7 @@ static int fts_ft5452_upgrade(u8 *buf, u32 len)
 
 	cmd[0] = FTS_CMD_FLASH_MODE;
 	cmd[1] = FLASH_MODE_UPGRADE_VALUE;
-	ret = fts_write(cmd, 2);
+	ret = fts_write(upg->fts_data, cmd, 2);
 	if (ret < 0) {
 		FTS_ERROR("upgrade mode(09) cmd write fail");
 		goto fw_reset;
@@ -81,13 +81,13 @@ static int fts_ft5452_upgrade(u8 *buf, u32 len)
 	cmd[1] = BYTE_OFF_16(len);
 	cmd[2] = BYTE_OFF_8(len);
 	cmd[3] = BYTE_OFF_0(len);
-	ret = fts_write(cmd, FTS_CMD_DATA_LEN_LEN);
+	ret = fts_write(upg->fts_data, cmd, FTS_CMD_DATA_LEN_LEN);
 	if (ret < 0) {
 		FTS_ERROR("data len cmd write fail");
 		goto fw_reset;
 	}
 
-	ret = fts_fwupg_erase(FTS_REASE_APP_DELAY);
+	ret = fts_fwupg_erase(upg, FTS_REASE_APP_DELAY);
 	if (ret < 0) {
 		FTS_ERROR("erase cmd write fail");
 		goto fw_reset;
@@ -95,7 +95,7 @@ static int fts_ft5452_upgrade(u8 *buf, u32 len)
 
 	/* write app */
 	start_addr = upgrade_func_ft5452.appoff;
-	ecc_in_host = fts_flash_write_buf(start_addr, buf, len, 1);
+	ecc_in_host = fts_flash_write_buf(upg, start_addr, buf, len, 1);
 	if (ecc_in_host < 0 ) {
 		FTS_ERROR("lcd initial code write fail");
 		goto fw_reset;
@@ -105,7 +105,7 @@ static int fts_ft5452_upgrade(u8 *buf, u32 len)
 
 	/* check sum init */
 	wbuf[0] = FTS_CMD_ECC_INIT;
-	ret = fts_write(wbuf, 1);
+	ret = fts_write(upg->fts_data, wbuf, 1);
 	if (ret < 0) {
 		FTS_ERROR("ecc init cmd write fail");
 		return ret;
@@ -122,7 +122,7 @@ static int fts_ft5452_upgrade(u8 *buf, u32 len)
 	wbuf[6] = BYTE_OFF_0(len);
 
 	FTS_DEBUG("ecc calc startaddr:0x%04x, len:%d", start_addr, len);
-	ret = fts_write(wbuf, 7);
+	ret = fts_write(upg->fts_data, wbuf, 7);
 	if (ret < 0) {
 		FTS_ERROR("ecc calc cmd write fail");
 		return ret;
@@ -134,7 +134,7 @@ static int fts_ft5452_upgrade(u8 *buf, u32 len)
 	for (i = 0; i < FTS_RETRIES_ECC_CAL; i++) {
 		wbuf[0] = FTS_CMD_FLASH_STATUS;
 		reg_val[0] = reg_val[1] = 0x00;
-		fts_read(wbuf, 1, reg_val, 2);
+		fts_read(upg->fts_data, wbuf, 1, reg_val, 2);
 		FTS_DEBUG("[UPGRADE]: reg_val[0]=%02x reg_val[0]=%02x!!", reg_val[0], reg_val[1]);
 		if ((0xF0 == reg_val[0]) && (0x55 == reg_val[1])) {
 			break;
@@ -144,7 +144,7 @@ static int fts_ft5452_upgrade(u8 *buf, u32 len)
 
 	/* read out check sum */
 	wbuf[0] = FTS_CMD_ECC_READ;
-	ret = fts_read(wbuf, 1, reg_val, 1);
+	ret = fts_read(upg->fts_data, wbuf, 1, reg_val, 1);
 	if (ret < 0) {
 		FTS_ERROR( "ecc read cmd write fail");
 		return ret;
@@ -158,7 +158,7 @@ static int fts_ft5452_upgrade(u8 *buf, u32 len)
 	}
 
 	FTS_INFO("upgrade success, reset to normal boot");
-	ret = fts_fwupg_reset_in_boot();
+	ret = fts_fwupg_reset_in_boot(upg);
 	if (ret < 0) {
 		FTS_ERROR("reset to normal boot fail");
 	}
@@ -168,7 +168,7 @@ static int fts_ft5452_upgrade(u8 *buf, u32 len)
 
 fw_reset:
 	FTS_INFO("upgrade fail, reset to normal boot");
-	ret = fts_fwupg_reset_in_boot();
+	ret = fts_fwupg_reset_in_boot(upg);
 	if (ret < 0) {
 		FTS_ERROR("reset to normal boot fail");
 	}
@@ -196,7 +196,7 @@ struct upgrade_func upgrade_func_ft5452 = {
  * Output:
  * Return: return 0 if success, otherwise return error code
  **********************************************************************/
-static int fts_ft5652_upgrade(u8 *buf, u32 len)
+static int fts_ft5652_upgrade(struct fts_upgrade *upg, u8 *buf, u32 len)
 {
 	int ret = 0;
 	u32 start_addr = 0;
@@ -211,7 +211,7 @@ static int fts_ft5652_upgrade(u8 *buf, u32 len)
 	}
 
 	/* enter into upgrade environment */
-	ret = fts_fwupg_enter_into_boot();
+	ret = fts_fwupg_enter_into_boot(upg);
 	if (ret < 0) {
 		FTS_ERROR("enter into pramboot/bootloader fail,ret=%d", ret);
 		goto fw_reset;
@@ -221,7 +221,7 @@ static int fts_ft5652_upgrade(u8 *buf, u32 len)
 	cmd[1] = BYTE_OFF_16(len);
 	cmd[2] = BYTE_OFF_8(len);
 	cmd[3] = BYTE_OFF_0(len);
-	ret = fts_write(cmd, FTS_CMD_DATA_LEN_LEN);
+	ret = fts_write(upg->fts_data, cmd, FTS_CMD_DATA_LEN_LEN);
 	if (ret < 0) {
 		FTS_ERROR("data len cmd write fail");
 		goto fw_reset;
@@ -229,14 +229,14 @@ static int fts_ft5652_upgrade(u8 *buf, u32 len)
 
 	cmd[0] = FTS_CMD_FLASH_MODE;
 	cmd[1] = FLASH_MODE_UPGRADE_VALUE;
-	ret = fts_write(cmd, 2);
+	ret = fts_write(upg->fts_data, cmd, 2);
 	if (ret < 0) {
 		FTS_ERROR("upgrade mode(09) cmd write fail");
 		goto fw_reset;
 	}
 
 	delay = FTS_DELAY_ERASE_PAGE_2K * (len / FTS_SIZE_PAGE_2K);
-	ret = fts_fwupg_erase(delay);
+	ret = fts_fwupg_erase(upg, delay);
 	if (ret < 0) {
 		FTS_ERROR("erase cmd write fail");
 		goto fw_reset;
@@ -244,14 +244,14 @@ static int fts_ft5652_upgrade(u8 *buf, u32 len)
 
 	/* write app */
 	start_addr = upgrade_func_ft5652.appoff;
-	ecc_in_host = fts_flash_write_buf(start_addr, buf, len, 1);
+	ecc_in_host = fts_flash_write_buf(upg, start_addr, buf, len, 1);
 	if (ecc_in_host < 0) {
 		FTS_ERROR("flash write fail");
 		goto fw_reset;
 	}
 
 	/* ecc */
-	ecc_in_tp = fts_fwupg_ecc_cal(start_addr, len);
+	ecc_in_tp = fts_fwupg_ecc_cal(upg, start_addr, len);
 	if (ecc_in_tp < 0) {
 		FTS_ERROR("ecc read fail");
 		goto fw_reset;
@@ -264,7 +264,7 @@ static int fts_ft5652_upgrade(u8 *buf, u32 len)
 	}
 
 	FTS_INFO("upgrade success, reset to normal boot");
-	ret = fts_fwupg_reset_in_boot();
+	ret = fts_fwupg_reset_in_boot(upg);
 	if (ret < 0)
 		FTS_ERROR("reset to normal boot fail");
 
@@ -273,7 +273,7 @@ static int fts_ft5652_upgrade(u8 *buf, u32 len)
 
 fw_reset:
 	FTS_INFO("upgrade fail, reset to normal boot");
-	ret = fts_fwupg_reset_in_boot();
+	ret = fts_fwupg_reset_in_boot(upg);
 	if (ret < 0)
 		FTS_ERROR("reset to normal boot fail");
 

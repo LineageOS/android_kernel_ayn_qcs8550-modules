@@ -1,5 +1,5 @@
 /************************************************************************
-* Copyright (C) 2012-2019, Focaltech Systems (R)£¬All Rights Reserved.
+* Copyright (C) 2012-2019, Focaltech Systems (R)ï¿½ï¿½All Rights Reserved.
 *
 * File Name: focaltech_flash.h
 *
@@ -133,6 +133,8 @@ enum UPGRADE_SPEC {
 /*****************************************************************************
 * Private enumerations, structures and unions using typedef
 *****************************************************************************/
+struct fts_upgrade;
+
 /* IC info */
 struct upgrade_func {
 	u64 ctype[FTX_MAX_COMPATIBLE_TYPE];
@@ -155,12 +157,12 @@ struct upgrade_func {
 	u8 *pramboot;
 	u32 pb_length;
 	int (*init)(u8 *, u32);
-	int (*write_pramboot_private)(void);
-	int (*upgrade)(u8 *, u32);
-	int (*get_hlic_ver)(u8 *);
-	int (*lic_upgrade)(u8 *, u32);
-	int (*param_upgrade)(u8 *, u32);
-	int (*force_upgrade)(u8 *, u32);
+	int (*write_pramboot_private)(struct fts_upgrade *upg);
+	int (*upgrade)(struct fts_upgrade *upg, u8 *, u32);
+	int (*get_hlic_ver)(struct fts_upgrade *upg, u8 *);
+	int (*lic_upgrade)(struct fts_upgrade *upg, u8 *, u32);
+	int (*param_upgrade)(struct fts_upgrade *upg, u8 *, u32);
+	int (*force_upgrade)(struct fts_upgrade *upg, u8 *, u32);
 };
 
 struct upgrade_setting_nf {
@@ -186,7 +188,7 @@ struct upgrade_module {
 };
 
 struct fts_upgrade {
-	struct fts_ts_data *ts_data;
+	struct fts_fts_data *fts_data;
 	struct upgrade_module *module_info;
 	struct upgrade_func *func;
 	struct upgrade_setting_nf *setting_nf;
@@ -207,10 +209,10 @@ extern struct upgrade_func upgrade_func_ft5652;
 /*****************************************************************************
 * Static function prototypes
 *****************************************************************************/
-int fts_fwupg_reset_in_boot(void);
-int fts_fwupg_enter_into_boot(void);
-int fts_fwupg_erase(u32 delay);
-int fts_fwupg_ecc_cal(u32 saddr, u32 len);
-int fts_flash_write_buf(u32 saddr, u8 *buf, u32 len, u32 delay);
+int fts_fwupg_reset_in_boot(struct fts_upgrade *upg);
+int fts_fwupg_enter_into_boot(struct fts_upgrade *upg);
+int fts_fwupg_erase(struct fts_upgrade *upg, u32 delay);
+int fts_fwupg_ecc_cal(struct fts_upgrade *upg, u32 saddr, u32 len);
+int fts_flash_write_buf(struct fts_upgrade *upg, u32 saddr, u8 *buf, u32 len, u32 delay);
 int fts_fwupg_upgrade(struct fts_upgrade *upg);
 #endif
