@@ -227,7 +227,40 @@ struct trusted_touch_vm_info {
 };
 #endif
 
-struct fts_ts_data {
+struct fts_upgrade;
+
+/*
+* gesture_id    - mean which gesture is recognised
+* point_num     - points number of this gesture
+* coordinate_x  - All gesture point x coordinate
+* coordinate_y  - All gesture point y coordinate
+* mode          - gesture enable/disable, need enable by host
+*               - 1:enable gesture function(default)  0:disable
+* active        - gesture work flag,
+*                 always set 1 when suspend, set 0 when resume
+*/
+struct fts_gesture_st {
+	u8 gesture_id;
+	u8 point_num;
+	u16 coordinate_x[FTS_GESTURE_POINTS_MAX];
+	u16 coordinate_y[FTS_GESTURE_POINTS_MAX];
+};
+
+struct fts_esdcheck_st {
+	u8  mode                : 1;    /* 1- need check esd 0- no esd check */
+	u8  suspend             : 1;
+	u8  proc_debug          : 1;    /* apk or adb use */
+	u8  intr                : 1;    /* 1- Interrupt trigger */
+	u8  unused              : 4;
+	u8  intr_cnt;
+	u8  flow_work_hold_cnt;         /* Flow Work Cnt(reg0x91) keep a same value for x times. >=5 times is ESD, need reset */
+	u8  flow_work_cnt_last;         /* Save Flow Work Cnt(reg0x91) value */
+	u32 hardware_reset_cnt;
+	u32 nack_cnt;
+	u32 dataerror_cnt;
+};
+
+struct fts_fts_data {
 	struct i2c_client *client;
 	struct spi_device *spi;
 	struct device *dev;
@@ -235,7 +268,9 @@ struct fts_ts_data {
 	struct fts_ts_platform_data *pdata;
 	struct ts_ic_info ic_info;
 	struct workqueue_struct *ts_workqueue;
+	struct fts_upgrade *upg;
 	struct work_struct fwupg_work;
+	struct fts_esdcheck_st fts_esdcheck_data;
 	struct delayed_work esdcheck_work;
 	struct delayed_work prc_work;
 	struct work_struct resume_work;
@@ -260,6 +295,7 @@ struct fts_ts_data {
 	bool glove_mode;
 	bool cover_mode;
 	bool charger_mode;
+	struct fts_gesture_st fts_gesture_data;
 	bool gesture_mode;      /* gesture enable or disable, default: disable */
 	int report_rate;
 	/* multi-touch */
@@ -317,68 +353,66 @@ enum _FTS_BUS_TYPE {
 /*****************************************************************************
 * Global variable or extern global variabls/functions
 *****************************************************************************/
-extern struct fts_ts_data *fts_data;
-
 /* communication interface */
-int fts_read(u8 *cmd, u32 cmdlen, u8 *data, u32 datalen);
-int fts_read_reg(u8 addr, u8 *value);
-int fts_write(u8 *writebuf, u32 writelen);
-int fts_write_reg(u8 addr, u8 value);
-void fts_hid2std(void);
-int fts_bus_init(struct fts_ts_data *ts_data);
-int fts_bus_exit(struct fts_ts_data *ts_data);
+int fts_read(struct fts_fts_data *fts_data, u8 *cmd, u32 cmdlen, u8 *data, u32 datalen);
+int fts_read_reg(struct fts_fts_data *fts_data, u8 addr, u8 *value);
+int fts_write(struct fts_fts_data *fts_data, u8 *writebuf, u32 writelen);
+int fts_write_reg(struct fts_fts_data *fts_data, u8 addr, u8 value);
+void fts_hid2std(struct fts_fts_data *fts_data);
+int fts_bus_init(struct fts_fts_data *fts_data);
+int fts_bus_exit(struct fts_fts_data *fts_data);
 
 /* Gesture functions */
-int fts_gesture_init(struct fts_ts_data *ts_data);
-int fts_gesture_exit(struct fts_ts_data *ts_data);
-void fts_gesture_recovery(struct fts_ts_data *ts_data);
-int fts_gesture_readdata(struct fts_ts_data *ts_data, u8 *data);
-int fts_gesture_suspend(struct fts_ts_data *ts_data);
-int fts_gesture_resume(struct fts_ts_data *ts_data);
+int fts_gesture_init(struct fts_fts_data *fts_data);
+int fts_gesture_exit(struct fts_fts_data *fts_data);
+void fts_gesture_recovery(struct fts_fts_data *fts_data);
+int fts_gesture_readdata(struct fts_fts_data *fts_data, u8 *data);
+int fts_gesture_suspend(struct fts_fts_data *fts_data);
+int fts_gesture_resume(struct fts_fts_data *fts_data);
 
 /* ADB functions */
-int fts_create_sysfs(struct fts_ts_data *ts_data);
-int fts_remove_sysfs(struct fts_ts_data *ts_data);
+int fts_create_sysfs(struct fts_fts_data *fts_data);
+int fts_remove_sysfs(struct fts_fts_data *fts_data);
 
 /* ESD */
 #if FTS_ESDCHECK_EN
-int fts_esdcheck_init(struct fts_ts_data *ts_data);
-int fts_esdcheck_exit(struct fts_ts_data *ts_data);
-int fts_esdcheck_switch(bool enable);
-int fts_esdcheck_proc_busy(bool proc_debug);
-int fts_esdcheck_set_intr(bool intr);
-int fts_esdcheck_suspend(void);
-int fts_esdcheck_resume(void);
+int fts_esdcheck_init(struct fts_fts_data *fts_data);
+int fts_esdcheck_exit(struct fts_fts_data *fts_data);
+int fts_esdcheck_switch(struct fts_fts_data *fts_data, bool enable);
+int fts_esdcheck_proc_busy(struct fts_fts_data *fts_data, bool proc_debug);
+int fts_esdcheck_set_intr(struct fts_fts_data *fts_data, bool intr);
+int fts_esdcheck_suspend(struct fts_fts_data *fts_data);
+int fts_esdcheck_resume(struct fts_fts_data *fts_data);
 #endif
 
 /* Point Report Check*/
 #if FTS_POINT_REPORT_CHECK_EN
-int fts_point_report_check_init(struct fts_ts_data *ts_data);
-int fts_point_report_check_exit(struct fts_ts_data *ts_data);
-void fts_prc_queue_work(struct fts_ts_data *ts_data);
+int fts_point_report_check_init(struct fts_fts_data *fts_data);
+int fts_point_report_check_exit(struct fts_fts_data *fts_data);
+void fts_prc_queue_work(struct fts_fts_data *fts_data);
 #endif
 
 /* FW upgrade */
-int fts_fwupg_init(struct fts_ts_data *ts_data);
-int fts_fwupg_exit(struct fts_ts_data *ts_data);
+int fts_fwupg_init(struct fts_fts_data *fts_data);
+int fts_fwupg_exit(struct fts_fts_data *fts_data);
 int fts_enter_test_environment(bool test_state);
 
 /* Other */
-int fts_reset_proc(int hdelayms);
-int fts_wait_tp_to_valid(void);
-void fts_release_all_finger(void);
-void fts_tp_state_recovery(struct fts_ts_data *ts_data);
-int fts_ex_mode_init(struct fts_ts_data *ts_data);
-int fts_ex_mode_exit(struct fts_ts_data *ts_data);
-int fts_ex_mode_recovery(struct fts_ts_data *ts_data);
+int fts_reset_proc(struct fts_fts_data *fts_data, int hdelayms);
+int fts_wait_tp_to_valid(struct fts_fts_data *fts_data);
+void fts_release_all_finger(struct fts_fts_data *fts_data);
+void fts_tp_state_recovery(struct fts_fts_data *fts_data);
+int fts_ex_mode_init(struct fts_fts_data *fts_data);
+int fts_ex_mode_exit(struct fts_fts_data *fts_data);
+int fts_ex_mode_recovery(struct fts_fts_data *fts_data);
 
-void fts_irq_disable(void);
-void fts_irq_enable(void);
-int fts_ts_handle_trusted_touch_pvm(struct fts_ts_data *ts_data, int value);
-int fts_ts_handle_trusted_touch_tvm(struct fts_ts_data *ts_data, int value);
+void fts_irq_disable(struct fts_fts_data *fts_data);
+void fts_irq_enable(struct fts_fts_data *fts_data);
+int fts_ts_handle_trusted_touch_pvm(struct fts_fts_data *fts_data, int value);
+int fts_ts_handle_trusted_touch_tvm(struct fts_fts_data *fts_data, int value);
 #ifdef CONFIG_FTS_TRUSTED_TOUCH
 #ifdef CONFIG_ARCH_QTI_VM
-void fts_ts_trusted_touch_tvm_i2c_failure_report(struct fts_ts_data *fts_data);
+void fts_ts_trusted_touch_tvm_i2c_failure_report(struct fts_fts_data *fts_data);
 #endif
 #endif
 #endif /* __LINUX_FOCALTECH_CORE_H__ */

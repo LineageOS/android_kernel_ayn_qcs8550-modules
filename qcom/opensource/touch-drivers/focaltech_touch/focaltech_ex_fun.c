@@ -89,11 +89,12 @@ static struct rwreg_operation_t {
 static ssize_t fts_hw_reset_show(
 	struct device *dev, struct device_attribute *attr, char *buf)
 {
+	struct fts_fts_data *fts_data = dev_get_drvdata(dev);
 	struct input_dev *input_dev = fts_data->input_dev;
 	ssize_t count = 0;
 
 	mutex_lock(&input_dev->mutex);
-	fts_reset_proc(0);
+	fts_reset_proc(fts_data, 0);
 	count = snprintf(buf, PAGE_SIZE, "hw reset executed\n");
 	mutex_unlock(&input_dev->mutex);
 
@@ -111,8 +112,9 @@ static ssize_t fts_hw_reset_store(
 static ssize_t fts_irq_show(
 	struct device *dev, struct device_attribute *attr, char *buf)
 {
-	ssize_t count = 0;
+	struct fts_fts_data *fts_data = dev_get_drvdata(dev);
 	struct irq_desc *desc = irq_to_desc(fts_data->irq);
+	ssize_t count = 0;
 
 	count = snprintf(buf, PAGE_SIZE, "irq_depth:%d\n", desc->depth);
 
@@ -123,15 +125,16 @@ static ssize_t fts_irq_store(
 	struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
+	struct fts_fts_data *fts_data = dev_get_drvdata(dev);
 	struct input_dev *input_dev = fts_data->input_dev;
 
 	mutex_lock(&input_dev->mutex);
 	if (FTS_SYSFS_ECHO_ON(buf)) {
 		FTS_INFO("enable irq");
-		fts_irq_enable();
+		fts_irq_enable(fts_data);
 	} else if (FTS_SYSFS_ECHO_OFF(buf)) {
 		FTS_INFO("disable irq");
-		fts_irq_disable();
+		fts_irq_disable(fts_data);
 	}
 	mutex_unlock(&input_dev->mutex);
 	return count;
@@ -142,6 +145,7 @@ static ssize_t fts_bootmode_store(
 	struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
+	struct fts_fts_data *fts_data = dev_get_drvdata(dev);
 	struct input_dev *input_dev = fts_data->input_dev;
 
 	FTS_FUNC_ENTER();
@@ -162,8 +166,9 @@ static ssize_t fts_bootmode_store(
 static ssize_t fts_bootmode_show(
 	struct device *dev, struct device_attribute *attr, char *buf)
 {
-	ssize_t count = 0;
+	struct fts_fts_data *fts_data = dev_get_drvdata(dev);
 	struct input_dev *input_dev = fts_data->input_dev;
+	ssize_t count = 0;
 
 	FTS_FUNC_ENTER();
 	mutex_lock(&input_dev->mutex);
@@ -182,19 +187,19 @@ static ssize_t fts_bootmode_show(
 static ssize_t fts_fw_version_show(
 	struct device *dev, struct device_attribute *attr, char *buf)
 {
-	struct fts_ts_data *ts_data = fts_data;
-	struct input_dev *input_dev = ts_data->input_dev;
+	struct fts_fts_data *fts_data = dev_get_drvdata(dev);
+	struct input_dev *input_dev = fts_data->input_dev;
 	ssize_t num_read_chars = 0;
 	u8 fwver = 0;
 
 	mutex_lock(&input_dev->mutex);
 
 #if FTS_ESDCHECK_EN
-	fts_esdcheck_proc_busy(1);
+	fts_esdcheck_proc_busy(fts_data, 1);
 #endif
-	fts_read_reg(FTS_REG_FW_VER, &fwver);
+	fts_read_reg(fts_data, FTS_REG_FW_VER, &fwver);
 #if FTS_ESDCHECK_EN
-	fts_esdcheck_proc_busy(0);
+	fts_esdcheck_proc_busy(fts_data, 0);
 #endif
 	if ((fwver == 0xFF) || (fwver == 0x00))
 		num_read_chars = snprintf(buf, PAGE_SIZE, "get tp fw version fail!\n");
@@ -216,9 +221,10 @@ static ssize_t fts_fw_version_store(
 static ssize_t fts_tprwreg_show(
 	struct device *dev, struct device_attribute *attr, char *buf)
 {
+	struct fts_fts_data *fts_data = dev_get_drvdata(dev);
+	struct input_dev *input_dev = fts_data->input_dev;
 	int count;
 	int i;
-	struct input_dev *input_dev = fts_data->input_dev;
 
 	mutex_lock(&input_dev->mutex);
 
@@ -366,6 +372,7 @@ static ssize_t fts_tprwreg_store(
 	struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
+	struct fts_fts_data *fts_data = dev_get_drvdata(dev);
 	struct input_dev *input_dev = fts_data->input_dev;
 	ssize_t cmd_length = 0;
 
@@ -397,7 +404,7 @@ static ssize_t fts_tprwreg_store(
 	}
 
 #if FTS_ESDCHECK_EN
-	fts_esdcheck_proc_busy(1);
+	fts_esdcheck_proc_busy(fts_data, 1);
 #endif
 	if (rw_op.len < 0) {
 		FTS_ERROR("cmd buffer error!");
@@ -408,13 +415,13 @@ static ssize_t fts_tprwreg_store(
 		if (rw_op.len == 1) {
 			u8 reg, val;
 			reg = rw_op.reg & 0xFF;
-			rw_op.res = fts_read_reg(reg, &val);
+			rw_op.res = fts_read_reg(fts_data, reg, &val);
 			rw_op.val = val;
 		} else {
 			char reg;
 			reg = rw_op.reg & 0xFF;
 
-			rw_op.res = fts_read(&reg, 1, rw_op.opbuf, rw_op.len);
+			rw_op.res = fts_read(fts_data, &reg, 1, rw_op.opbuf, rw_op.len);
 		}
 
 		if (rw_op.res < 0) {
@@ -429,9 +436,9 @@ static ssize_t fts_tprwreg_store(
 			u8 reg, val;
 			reg = rw_op.reg & 0xFF;
 			val = rw_op.val & 0xFF;
-			rw_op.res = fts_write_reg(reg, val);
+			rw_op.res = fts_write_reg(fts_data, reg, val);
 		} else {
-			rw_op.res = fts_write(rw_op.opbuf, rw_op.len);
+			rw_op.res = fts_write(fts_data, rw_op.opbuf, rw_op.len);
 		}
 		if (rw_op.res < 0) {
 			FTS_ERROR("Could not write 0x%02x", rw_op.reg);
@@ -444,7 +451,7 @@ static ssize_t fts_tprwreg_store(
 
 exit:
 #if FTS_ESDCHECK_EN
-	fts_esdcheck_proc_busy(0);
+	fts_esdcheck_proc_busy(fts_data, 0);
 #endif
 	mutex_unlock(&input_dev->mutex);
 
@@ -456,9 +463,9 @@ static ssize_t fts_driverinfo_show(
 	struct device *dev, struct device_attribute *attr, char *buf)
 {
 	int count = 0;
-	struct fts_ts_data *ts_data = fts_data;
-	struct fts_ts_platform_data *pdata = ts_data->pdata;
-	struct input_dev *input_dev = ts_data->input_dev;
+	struct fts_fts_data *fts_data = dev_get_drvdata(dev);
+	struct fts_ts_platform_data *pdata = fts_data->pdata;
+	struct input_dev *input_dev = fts_data->input_dev;
 
 	mutex_lock(&input_dev->mutex);
 	count += scnprintf(buf + count, PAGE_SIZE, "Driver Ver:%s\n", FTS_DRIVER_VERSION);
@@ -469,17 +476,17 @@ static ssize_t fts_driverinfo_show(
 	count += snprintf(buf + count, PAGE_SIZE, "Max Touchs:%d\n", pdata->max_touch_number);
 
 	count += scnprintf(buf + count, PAGE_SIZE, "reset gpio:%d,int gpio:%d,irq:%d\n",
-			pdata->reset_gpio, pdata->irq_gpio, ts_data->irq);
+			pdata->reset_gpio, pdata->irq_gpio, fts_data->irq);
 
 	count += scnprintf(buf + count, PAGE_SIZE, "IC ID:0x%02x%02x\n",
-			ts_data->ic_info.ids.chip_idh, ts_data->ic_info.ids.chip_idl);
-	if (ts_data->bus_type == BUS_TYPE_I2C)
+			fts_data->ic_info.ids.chip_idh, fts_data->ic_info.ids.chip_idl);
+	if (fts_data->bus_type == BUS_TYPE_I2C)
 		count += scnprintf(buf + count, PAGE_SIZE, "BUS:%s,addr:0x%x\n",
-				"I2C", ts_data->client->addr);
+				"I2C", fts_data->client->addr);
 	else
 		count += scnprintf(buf + count, PAGE_SIZE,
 				"BUS:%s,mode:%d,max_freq:%d\n", "SPI",
-				ts_data->spi->mode, ts_data->spi->max_speed_hz);
+				fts_data->spi->mode, fts_data->spi->max_speed_hz);
 
 	mutex_unlock(&input_dev->mutex);
 
@@ -496,48 +503,49 @@ static ssize_t fts_driverinfo_store(struct device *dev,
 static ssize_t fts_dumpreg_show(
 	struct device *dev, struct device_attribute *attr, char *buf)
 {
+	struct fts_fts_data *fts_data = dev_get_drvdata(dev);
+	struct input_dev *input_dev = fts_data->input_dev;
 	int count = 0;
 	u8 val = 0;
-	struct input_dev *input_dev = fts_data->input_dev;
 
 	mutex_lock(&input_dev->mutex);
 #if FTS_ESDCHECK_EN
-	fts_esdcheck_proc_busy(1);
+	fts_esdcheck_proc_busy(fts_data, 1);
 #endif
-	fts_read_reg(FTS_REG_POWER_MODE, &val);
+	fts_read_reg(fts_data, FTS_REG_POWER_MODE, &val);
 	count += snprintf(buf + count, PAGE_SIZE, "Power Mode:0x%02x\n", val);
 
-	fts_read_reg(FTS_REG_FW_VER, &val);
+	fts_read_reg(fts_data, FTS_REG_FW_VER, &val);
 	count += snprintf(buf + count, PAGE_SIZE, "FW Ver:0x%02x\n", val);
 
-	fts_read_reg(FTS_REG_LIC_VER, &val);
+	fts_read_reg(fts_data, FTS_REG_LIC_VER, &val);
 	count += snprintf(buf + count, PAGE_SIZE, "LCD Initcode Ver:0x%02x\n", val);
 
-	fts_read_reg(FTS_REG_IDE_PARA_VER_ID, &val);
+	fts_read_reg(fts_data, FTS_REG_IDE_PARA_VER_ID, &val);
 	count += snprintf(buf + count, PAGE_SIZE, "Param Ver:0x%02x\n", val);
 
-	fts_read_reg(FTS_REG_IDE_PARA_STATUS, &val);
+	fts_read_reg(fts_data, FTS_REG_IDE_PARA_STATUS, &val);
 	count += snprintf(buf + count, PAGE_SIZE, "Param status:0x%02x\n", val);
 
-	fts_read_reg(FTS_REG_VENDOR_ID, &val);
+	fts_read_reg(fts_data, FTS_REG_VENDOR_ID, &val);
 	count += snprintf(buf + count, PAGE_SIZE, "Vendor ID:0x%02x\n", val);
 
-	fts_read_reg(FTS_REG_LCD_BUSY_NUM, &val);
+	fts_read_reg(fts_data, FTS_REG_LCD_BUSY_NUM, &val);
 	count += snprintf(buf + count, PAGE_SIZE, "LCD Busy Number:0x%02x\n", val);
 
-	fts_read_reg(FTS_REG_GESTURE_EN, &val);
+	fts_read_reg(fts_data, FTS_REG_GESTURE_EN, &val);
 	count += snprintf(buf + count, PAGE_SIZE, "Gesture Mode:0x%02x\n", val);
 
-	fts_read_reg(FTS_REG_CHARGER_MODE_EN, &val);
+	fts_read_reg(fts_data, FTS_REG_CHARGER_MODE_EN, &val);
 	count += snprintf(buf + count, PAGE_SIZE, "charge stat:0x%02x\n", val);
 
-	fts_read_reg(FTS_REG_INT_CNT, &val);
+	fts_read_reg(fts_data, FTS_REG_INT_CNT, &val);
 	count += snprintf(buf + count, PAGE_SIZE, "INT count:0x%02x\n", val);
 
-	fts_read_reg(FTS_REG_FLOW_WORK_CNT, &val);
+	fts_read_reg(fts_data, FTS_REG_FLOW_WORK_CNT, &val);
 	count += snprintf(buf + count, PAGE_SIZE, "ESD count:0x%02x\n", val);
 #if FTS_ESDCHECK_EN
-	fts_esdcheck_proc_busy(0);
+	fts_esdcheck_proc_busy(fts_data, 0);
 #endif
 
 	mutex_unlock(&input_dev->mutex);
@@ -556,9 +564,10 @@ static ssize_t fts_dumpreg_store(
 static ssize_t fts_tpbuf_show(
 	struct device *dev, struct device_attribute *attr, char *buf)
 {
+	struct fts_fts_data *fts_data = dev_get_drvdata(dev);
+	struct input_dev *input_dev = fts_data->input_dev;
 	int count = 0;
 	int i = 0;
-	struct input_dev *input_dev = fts_data->input_dev;
 
 	mutex_lock(&input_dev->mutex);
 	count += snprintf(buf + count, PAGE_SIZE, "touch point buffer:\n");
@@ -583,8 +592,9 @@ static ssize_t fts_tpbuf_store(
 static ssize_t fts_log_level_show(
 	struct device *dev, struct device_attribute *attr, char *buf)
 {
-	int count = 0;
+	struct fts_fts_data *fts_data = dev_get_drvdata(dev);
 	struct input_dev *input_dev = fts_data->input_dev;
+	int count = 0;
 
 	mutex_lock(&input_dev->mutex);
 	count += snprintf(buf + count, PAGE_SIZE, "log level:%d\n",
@@ -598,8 +608,9 @@ static ssize_t fts_log_level_store(
 	struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
-	int value = 0;
+	struct fts_fts_data *fts_data = dev_get_drvdata(dev);
 	struct input_dev *input_dev = fts_data->input_dev;
+	int value = 0;
 
 	FTS_FUNC_ENTER();
 	mutex_lock(&input_dev->mutex);
@@ -617,16 +628,16 @@ static ssize_t fts_log_level_store(
 static ssize_t trusted_touch_enable_show(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
-	struct fts_ts_data *info = fts_data;
+	struct fts_fts_data *fts_data = dev_get_drvdata(dev);
 
 	return scnprintf(buf, PAGE_SIZE, "%d",
-			atomic_read(&info->trusted_touch_enabled));
+			atomic_read(&fts_data->trusted_touch_enabled));
 }
 
 static ssize_t trusted_touch_enable_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count)
 {
-	struct fts_ts_data *info = fts_data;
+	struct fts_fts_data *fts_data = dev_get_drvdata(dev);
 	unsigned long value;
 	int err = 0;
 
@@ -636,17 +647,17 @@ static ssize_t trusted_touch_enable_store(struct device *dev,
 	if (err != 0)
 		return err;
 
-	if (!atomic_read(&info->trusted_touch_initialized))
+	if (!atomic_read(&fts_data->trusted_touch_initialized))
 		return -EIO;
 
 #ifdef CONFIG_ARCH_QTI_VM
-	err = fts_ts_handle_trusted_touch_tvm(info, value);
+	err = fts_ts_handle_trusted_touch_tvm(fts_data, value);
 	if (err) {
 		pr_err("Failed to handle trusted touch in tvm\n");
 		return -EINVAL;
 	}
 #else
-	err = fts_ts_handle_trusted_touch_pvm(info, value);
+	err = fts_ts_handle_trusted_touch_pvm(fts_data, value);
 	if (err) {
 		pr_err("Failed to handle trusted touch in pvm\n");
 		return -EINVAL;
@@ -659,16 +670,16 @@ static ssize_t trusted_touch_enable_store(struct device *dev,
 static ssize_t trusted_touch_event_show(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
-	struct fts_ts_data *info = fts_data;
+	struct fts_fts_data *fts_data = dev_get_drvdata(dev);
 
 	return scnprintf(buf, PAGE_SIZE, "%d",
-			atomic_read(&info->trusted_touch_event));
+			atomic_read(&fts_data->trusted_touch_event));
 }
 
 static ssize_t trusted_touch_event_store(struct device *dev,
 		struct device_attribute *attr, const char *buf, size_t count)
 {
-	struct fts_ts_data *info = fts_data;
+	struct fts_fts_data *fts_data = dev_get_drvdata(dev);
 	unsigned long value;
 	int err = 0;
 
@@ -679,13 +690,13 @@ static ssize_t trusted_touch_event_store(struct device *dev,
 	if (err != 0)
 		return err;
 
-	if (!atomic_read(&info->trusted_touch_initialized))
+	if (!atomic_read(&fts_data->trusted_touch_initialized))
 		return -EIO;
 
 	if (value)
 		return -EIO;
 
-	atomic_set(&info->trusted_touch_event, value);
+	atomic_set(&fts_data->trusted_touch_event, value);
 
 	return count;
 }
@@ -693,9 +704,9 @@ static ssize_t trusted_touch_event_store(struct device *dev,
 static ssize_t trusted_touch_type_show(struct device *dev,
 		struct device_attribute *attr, char *buf)
 {
-	struct fts_ts_data *info = fts_data;
+	struct fts_fts_data *fts_data = dev_get_drvdata(dev);
 
-	return scnprintf(buf, PAGE_SIZE, "%s", info->vm_info->trusted_touch_type);
+	return scnprintf(buf, PAGE_SIZE, "%s", fts_data->vm_info->trusted_touch_type);
 }
 
 #endif
@@ -753,14 +764,14 @@ static struct attribute_group fts_attribute_group = {
 	.attrs = fts_attributes
 };
 
-int fts_create_sysfs(struct fts_ts_data *ts_data)
+int fts_create_sysfs(struct fts_fts_data *fts_data)
 {
 	int ret = 0;
 
-	ret = sysfs_create_group(&ts_data->dev->kobj, &fts_attribute_group);
+	ret = sysfs_create_group(&fts_data->dev->kobj, &fts_attribute_group);
 	if (ret) {
 		FTS_ERROR("[EX]: sysfs_create_group() failed!!");
-		sysfs_remove_group(&ts_data->dev->kobj, &fts_attribute_group);
+		sysfs_remove_group(&fts_data->dev->kobj, &fts_attribute_group);
 		return -ENOMEM;
 	} else {
 		FTS_INFO("[EX]: sysfs_create_group() succeeded!!");
@@ -769,8 +780,8 @@ int fts_create_sysfs(struct fts_ts_data *ts_data)
 	return ret;
 }
 
-int fts_remove_sysfs(struct fts_ts_data *ts_data)
+int fts_remove_sysfs(struct fts_fts_data *fts_data)
 {
-	sysfs_remove_group(&ts_data->dev->kobj, &fts_attribute_group);
+	sysfs_remove_group(&fts_data->dev->kobj, &fts_attribute_group);
 	return 0;
 }

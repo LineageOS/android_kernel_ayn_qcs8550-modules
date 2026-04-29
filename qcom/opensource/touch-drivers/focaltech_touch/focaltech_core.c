@@ -88,8 +88,6 @@
 /*****************************************************************************
 * Global variable or extern global variabls/functions
 *****************************************************************************/
-struct fts_ts_data *fts_data;
-
 #if defined(CONFIG_DRM)
 static struct drm_panel *active_panel;
 static void fts_ts_panel_notifier_callback(enum panel_event_notifier_tag tag,
@@ -105,12 +103,12 @@ static struct ft_chip_t ctype[] = {
 /*****************************************************************************
 * Static function prototypes
 *****************************************************************************/
-static int fts_ts_suspend(struct device *dev);
-static int fts_ts_resume(struct device *dev);
+static int fts_ts_suspend(struct fts_fts_data *fts_data);
+static int fts_ts_resume(struct fts_fts_data *fts_data);
 static irqreturn_t fts_irq_handler(int irq, void *data);
-static int fts_ts_probe_delayed(struct fts_ts_data *fts_data);
+static int fts_ts_probe_delayed(struct fts_fts_data *fts_data);
 #ifndef CONFIG_ARCH_QTI_VM
-static int fts_ts_enable_reg(struct fts_ts_data *ts_data, bool enable);
+static int fts_ts_enable_reg(struct fts_fts_data *fts_data, bool enable);
 #endif
 static int fts_ts_suspend_helper(void *data);
 static int fts_ts_resume_helper(void *data);
@@ -121,11 +119,11 @@ static int fts_ts_post_la_tui_enable(void *data);
 static int fts_ts_post_le_tui_enable(void *data);
 static int fts_ts_post_le_tui_disable(void *data);
 static void fts_ts_fill_qts_vendor_data(struct qts_vendor_data *qts_vendor_data,
-		 struct fts_ts_data *core_data);
+		 struct fts_fts_data *core_data);
 static irqreturn_t fts_ts_irq_handler(int irq, void *data);
 
 static void fts_ts_register_for_panel_events(struct device_node *dp,
-					struct fts_ts_data *ts_data)
+					struct fts_fts_data *fts_data)
 {
 	const char *touch_type;
 	int rc = 0;
@@ -145,7 +143,7 @@ static void fts_ts_register_for_panel_events(struct device_node *dp,
 
 	cookie = panel_event_notifier_register(PANEL_EVENT_NOTIFICATION_PRIMARY,
 			PANEL_EVENT_NOTIFIER_CLIENT_PRIMARY_TOUCH, active_panel,
-			&fts_ts_panel_notifier_callback, ts_data);
+			&fts_ts_panel_notifier_callback, fts_data);
 	if (!cookie) {
 		pr_err("Failed to register for panel events\n");
 		return;
@@ -154,12 +152,12 @@ static void fts_ts_register_for_panel_events(struct device_node *dp,
 	FTS_DEBUG("registered for panel notifications panel: 0x%x\n",
 			active_panel);
 
-	ts_data->notifier_cookie = cookie;
+	fts_data->notifier_cookie = cookie;
 }
 
 #ifdef CONFIG_FTS_TRUSTED_TOUCH
 
-static void fts_ts_trusted_touch_abort_handler(struct fts_ts_data *fts_data,
+static void fts_ts_trusted_touch_abort_handler(struct fts_fts_data *fts_data,
 						int error);
 static struct gh_acl_desc *fts_ts_vm_get_acl(enum gh_vm_names vm_name)
 {
@@ -201,7 +199,7 @@ static struct gh_sgl_desc *fts_ts_vm_get_sgl(
 	return sgl_desc;
 }
 
-static int fts_ts_populate_vm_info_iomem(struct fts_ts_data *fts_data)
+static int fts_ts_populate_vm_info_iomem(struct fts_fts_data *fts_data)
 {
 	int i, gpio, rc = 0;
 	int num_regs, num_sizes, num_gpios, list_size;
@@ -277,7 +275,7 @@ static int fts_ts_populate_vm_info_iomem(struct fts_ts_data *fts_data)
 	return 0;
 }
 
-static int fts_ts_populate_vm_info(struct fts_ts_data *fts_data)
+static int fts_ts_populate_vm_info(struct fts_fts_data *fts_data)
 {
 	int rc;
 	struct trusted_touch_vm_info *vm_info;
@@ -319,45 +317,45 @@ static int fts_ts_populate_vm_info(struct fts_ts_data *fts_data)
 	return 0;
 }
 
-static void fts_ts_destroy_vm_info(struct fts_ts_data *fts_data)
+static void fts_ts_destroy_vm_info(struct fts_fts_data *fts_data)
 {
 	kfree(fts_data->vm_info->iomem_sizes);
 	kfree(fts_data->vm_info->iomem_bases);
 	kfree(fts_data->vm_info);
 }
 
-static void fts_ts_vm_deinit(struct fts_ts_data *fts_data)
+static void fts_ts_vm_deinit(struct fts_fts_data *fts_data)
 {
 	if (fts_data->vm_info->mem_cookie)
 		gh_mem_notifier_unregister(fts_data->vm_info->mem_cookie);
 	fts_ts_destroy_vm_info(fts_data);
 }
 
-static int fts_ts_trusted_touch_get_vm_state(struct fts_ts_data *fts_data)
+static int fts_ts_trusted_touch_get_vm_state(struct fts_fts_data *fts_data)
 {
 	return atomic_read(&fts_data->vm_info->vm_state);
 }
 
-static void fts_ts_trusted_touch_set_vm_state(struct fts_ts_data *fts_data,
+static void fts_ts_trusted_touch_set_vm_state(struct fts_fts_data *fts_data,
 							int state)
 {
 	atomic_set(&fts_data->vm_info->vm_state, state);
 }
 
 #ifdef CONFIG_ARCH_QTI_VM
-static int fts_ts_vm_mem_release(struct fts_ts_data *fts_data);
-static void fts_ts_trusted_touch_tvm_vm_mode_disable(struct fts_ts_data *fts_data);
-static void fts_ts_trusted_touch_abort_tvm(struct fts_ts_data *fts_data);
-static void fts_ts_trusted_touch_event_notify(struct fts_ts_data *fts_data, int event);
+static int fts_ts_vm_mem_release(struct fts_fts_data *fts_data);
+static void fts_ts_trusted_touch_tvm_vm_mode_disable(struct fts_fts_data *fts_data);
+static void fts_ts_trusted_touch_abort_tvm(struct fts_fts_data *fts_data);
+static void fts_ts_trusted_touch_event_notify(struct fts_fts_data *fts_data, int event);
 
-void fts_ts_trusted_touch_tvm_i2c_failure_report(struct fts_ts_data *fts_data)
+void fts_ts_trusted_touch_tvm_i2c_failure_report(struct fts_fts_data *fts_data)
 {
 	pr_err("initiating trusted touch abort due to i2c failure\n");
 	fts_ts_trusted_touch_abort_handler(fts_data,
 			TRUSTED_TOUCH_EVENT_I2C_FAILURE);
 }
 
-static void fts_ts_trusted_touch_reset_gpio_toggle(struct fts_ts_data *fts_data)
+static void fts_ts_trusted_touch_reset_gpio_toggle(struct fts_fts_data *fts_data)
 {
 	void __iomem *base;
 
@@ -374,7 +372,7 @@ static void fts_ts_trusted_touch_reset_gpio_toggle(struct fts_ts_data *fts_data)
 	iounmap(base);
 }
 
-static void fts_trusted_touch_intr_gpio_toggle(struct fts_ts_data *fts_data,
+static void fts_trusted_touch_intr_gpio_toggle(struct fts_fts_data *fts_data,
 		bool enable)
 {
 	void __iomem *base;
@@ -434,7 +432,7 @@ static int fts_ts_vm_compare_sgl_desc(struct gh_sgl_desc *expected,
 	return 0;
 }
 
-static int fts_ts_vm_handle_vm_hardware(struct fts_ts_data *fts_data)
+static int fts_ts_vm_handle_vm_hardware(struct fts_fts_data *fts_data)
 {
 	int rc = 0;
 
@@ -448,12 +446,12 @@ static int fts_ts_vm_handle_vm_hardware(struct fts_ts_data *fts_data)
 		return rc;
 	}
 
-	fts_irq_enable();
+	fts_irq_enable(fts_data);
 	fts_ts_trusted_touch_set_vm_state(fts_data, TVM_INTERRUPT_ENABLED);
 	return rc;
 }
 
-static void fts_ts_trusted_touch_tvm_vm_mode_enable(struct fts_ts_data *fts_data)
+static void fts_ts_trusted_touch_tvm_vm_mode_enable(struct fts_fts_data *fts_data)
 {
 
 	struct gh_sgl_desc *sgl_desc, *expected_sgl_desc;
@@ -558,7 +556,7 @@ static void fts_ts_vm_irq_on_lend_callback(void *data,
 					unsigned long notif_type,
 					enum gh_irq_label label)
 {
-	struct fts_ts_data *fts_data = data;
+	struct fts_fts_data *fts_data = data;
 
 	pr_debug("received irq lend request for label:%d\n", label);
 	if (fts_ts_trusted_touch_get_vm_state(fts_data) == TVM_IOMEM_LENT_NOTIFIED)
@@ -572,9 +570,8 @@ static void fts_ts_vm_mem_on_lend_handler(enum gh_mem_notifier_tag tag,
 {
 	struct gh_rm_notif_mem_shared_payload *payload;
 	struct trusted_touch_vm_info *vm_info;
-	struct fts_ts_data *fts_data;
+	struct fts_fts_data *fts_data = (struct fts_fts_data *)entry_data;
 
-	fts_data = (struct fts_ts_data *)entry_data;
 	vm_info = fts_data->vm_info;
 	if (!vm_info) {
 		pr_err("Invalid vm_info\n");
@@ -609,7 +606,7 @@ static void fts_ts_vm_mem_on_lend_handler(enum gh_mem_notifier_tag tag,
 		fts_ts_trusted_touch_set_vm_state(fts_data, TVM_IOMEM_LENT_NOTIFIED);
 }
 
-static int fts_ts_vm_mem_release(struct fts_ts_data *fts_data)
+static int fts_ts_vm_mem_release(struct fts_fts_data *fts_data)
 {
 	int rc = 0;
 
@@ -633,7 +630,7 @@ static int fts_ts_vm_mem_release(struct fts_ts_data *fts_data)
 	return rc;
 }
 
-static void fts_ts_trusted_touch_tvm_vm_mode_disable(struct fts_ts_data *fts_data)
+static void fts_ts_trusted_touch_tvm_vm_mode_disable(struct fts_fts_data *fts_data)
 {
 	int rc = 0;
 
@@ -642,7 +639,7 @@ static void fts_ts_trusted_touch_tvm_vm_mode_disable(struct fts_ts_data *fts_dat
 		return;
 	}
 
-	fts_irq_disable();
+	fts_irq_disable(fts_data);
 	fts_ts_trusted_touch_set_vm_state(fts_data, TVM_INTERRUPT_DISABLED);
 
 	rc = gh_irq_release(fts_data->vm_info->irq_label);
@@ -658,7 +655,7 @@ static void fts_ts_trusted_touch_tvm_vm_mode_disable(struct fts_ts_data *fts_dat
 
 	pr_debug("vm irq release succeded\n");
 
-	fts_release_all_finger();
+	fts_release_all_finger(fts_data);
 
 	if (fts_data->bus_type == BUS_TYPE_I2C)
 		pm_runtime_put_sync(fts_data->client->adapter->dev.parent);
@@ -682,7 +679,7 @@ error:
 			TRUSTED_TOUCH_EVENT_RELEASE_FAILURE);
 }
 
-int fts_ts_handle_trusted_touch_tvm(struct fts_ts_data *fts_data, int value)
+int fts_ts_handle_trusted_touch_tvm(struct fts_fts_data *fts_data, int value)
 {
 	int err = 0;
 
@@ -724,7 +721,7 @@ int fts_ts_handle_trusted_touch_tvm(struct fts_ts_data *fts_data, int value)
 	return err;
 }
 
-static void fts_ts_trusted_touch_abort_tvm(struct fts_ts_data *fts_data)
+static void fts_ts_trusted_touch_abort_tvm(struct fts_fts_data *fts_data)
 {
 	int rc = 0;
 	int vm_state = fts_ts_trusted_touch_get_vm_state(fts_data);
@@ -736,7 +733,7 @@ static void fts_ts_trusted_touch_abort_tvm(struct fts_ts_data *fts_data)
 
 	switch (vm_state) {
 	case TVM_INTERRUPT_ENABLED:
-		fts_irq_disable();
+		fts_irq_disable(fts_data);
 	case TVM_IRQ_ACCEPTED:
 	case TVM_INTERRUPT_DISABLED:
 		rc = gh_irq_release(fts_data->vm_info->irq_label);
@@ -748,7 +745,7 @@ static void fts_ts_trusted_touch_abort_tvm(struct fts_ts_data *fts_data)
 	case TVM_I2C_SESSION_ACQUIRED:
 	case TVM_IOMEM_ACCEPTED:
 	case TVM_IRQ_RELEASED:
-		fts_release_all_finger();
+		fts_release_all_finger(fts_data);
 		if (fts_data->bus_type == BUS_TYPE_I2C)
 			pm_runtime_put_sync(fts_data->client->adapter->dev.parent);
 		else
@@ -771,9 +768,9 @@ static void fts_ts_trusted_touch_abort_tvm(struct fts_ts_data *fts_data)
 
 #else
 
-static void fts_ts_bus_put(struct fts_ts_data *fts_data);
+static void fts_ts_bus_put(struct fts_fts_data *fts_data);
 
-static void fts_ts_trusted_touch_abort_pvm(struct fts_ts_data *fts_data)
+static void fts_ts_trusted_touch_abort_pvm(struct fts_fts_data *fts_data)
 {
 	int rc = 0;
 	int vm_state = fts_ts_trusted_touch_get_vm_state(fts_data);
@@ -801,7 +798,7 @@ static void fts_ts_trusted_touch_abort_pvm(struct fts_ts_data *fts_data)
 		fts_data->vm_info->vm_mem_handle = 0;
 	case PVM_IOMEM_RECLAIMED:
 	case PVM_INTERRUPT_DISABLED:
-		fts_irq_enable();
+		fts_irq_enable(fts_data);
 	case PVM_I2C_RESOURCE_ACQUIRED:
 	case PVM_INTERRUPT_ENABLED:
 		fts_ts_bus_put(fts_data);
@@ -816,7 +813,7 @@ static void fts_ts_trusted_touch_abort_pvm(struct fts_ts_data *fts_data)
 	fts_ts_trusted_touch_set_vm_state(fts_data, TRUSTED_TOUCH_PVM_INIT);
 }
 
-static int fts_ts_clk_prepare_enable(struct fts_ts_data *fts_data)
+static int fts_ts_clk_prepare_enable(struct fts_fts_data *fts_data)
 {
 	int ret;
 
@@ -834,13 +831,13 @@ static int fts_ts_clk_prepare_enable(struct fts_ts_data *fts_data)
 	return ret;
 }
 
-static void fts_ts_clk_disable_unprepare(struct fts_ts_data *fts_data)
+static void fts_ts_clk_disable_unprepare(struct fts_fts_data *fts_data)
 {
 	clk_disable_unprepare(fts_data->core_clk);
 	clk_disable_unprepare(fts_data->iface_clk);
 }
 
-static int fts_ts_bus_get(struct fts_ts_data *fts_data)
+static int fts_ts_bus_get(struct fts_fts_data *fts_data)
 {
 	int rc = 0;
 	struct device *dev = NULL;
@@ -867,7 +864,7 @@ static int fts_ts_bus_get(struct fts_ts_data *fts_data)
 	return rc;
 }
 
-static void fts_ts_bus_put(struct fts_ts_data *fts_data)
+static void fts_ts_bus_put(struct fts_fts_data *fts_data)
 {
 	struct device *dev = NULL;
 
@@ -899,7 +896,7 @@ static struct gh_notify_vmid_desc *fts_ts_vm_get_vmid(gh_vmid_t vmid)
 	return vmid_desc;
 }
 
-static void fts_trusted_touch_pvm_vm_mode_disable(struct fts_ts_data *fts_data)
+static void fts_trusted_touch_pvm_vm_mode_disable(struct fts_fts_data *fts_data)
 {
 	int rc = 0;
 
@@ -930,7 +927,7 @@ static void fts_trusted_touch_pvm_vm_mode_disable(struct fts_ts_data *fts_data)
 	fts_ts_trusted_touch_set_vm_state(fts_data, PVM_IRQ_RECLAIMED);
 	pr_debug("vm irq reclaim succeded!\n");
 
-	fts_irq_enable();
+	fts_irq_enable(fts_data);
 	fts_ts_trusted_touch_set_vm_state(fts_data, PVM_INTERRUPT_ENABLED);
 	fts_ts_bus_put(fts_data);
 	atomic_set(&fts_data->trusted_touch_transition, 0);
@@ -948,7 +945,7 @@ static void fts_ts_vm_irq_on_release_callback(void *data,
 					unsigned long notif_type,
 					enum gh_irq_label label)
 {
-	struct fts_ts_data *fts_data = data;
+	struct fts_fts_data *fts_data = data;
 
 	if (notif_type != GH_RM_NOTIF_VM_IRQ_RELEASED) {
 		pr_err("invalid notification type\n");
@@ -966,9 +963,9 @@ static void fts_ts_vm_mem_on_release_handler(enum gh_mem_notifier_tag tag,
 {
 	struct gh_rm_notif_mem_released_payload *release_payload;
 	struct trusted_touch_vm_info *vm_info;
-	struct fts_ts_data *fts_data;
+	struct fts_fts_data *fts_data;
 
-	fts_data = (struct fts_ts_data *)entry_data;
+	fts_data = (struct fts_fts_data *)entry_data;
 	vm_info = fts_data->vm_info;
 	if (!vm_info) {
 		pr_err(" Invalid vm_info\n");
@@ -1002,7 +999,7 @@ static void fts_ts_vm_mem_on_release_handler(enum gh_mem_notifier_tag tag,
 		fts_ts_trusted_touch_set_vm_state(fts_data, PVM_IOMEM_RELEASE_NOTIFIED);
 }
 
-static int fts_ts_vm_mem_lend(struct fts_ts_data *fts_data)
+static int fts_ts_vm_mem_lend(struct fts_fts_data *fts_data)
 {
 	struct gh_acl_desc *acl_desc;
 	struct gh_sgl_desc *sgl_desc;
@@ -1061,7 +1058,7 @@ sgl_error:
 	return rc;
 }
 
-static int fts_ts_trusted_touch_pvm_vm_mode_enable(struct fts_ts_data *fts_data)
+static int fts_ts_trusted_touch_pvm_vm_mode_enable(struct fts_fts_data *fts_data)
 {
 	int rc = 0;
 	struct trusted_touch_vm_info *vm_info = fts_data->vm_info;
@@ -1085,9 +1082,9 @@ static int fts_ts_trusted_touch_pvm_vm_mode_enable(struct fts_ts_data *fts_data)
 
 	fts_ts_trusted_touch_set_vm_state(fts_data, PVM_I2C_RESOURCE_ACQUIRED);
 	/* flush pending interurpts from FIFO */
-	fts_irq_disable();
+	fts_irq_disable(fts_data);
 	fts_ts_trusted_touch_set_vm_state(fts_data, PVM_INTERRUPT_DISABLED);
-	fts_release_all_finger();
+	fts_release_all_finger(fts_data);
 
 	rc = fts_ts_vm_mem_lend(fts_data);
 	if (rc) {
@@ -1126,7 +1123,7 @@ error:
 	return rc;
 }
 
-int fts_ts_handle_trusted_touch_pvm(struct fts_ts_data *fts_data, int value)
+int fts_ts_handle_trusted_touch_pvm(struct fts_fts_data *fts_data, int value)
 {
 	int err = 0;
 
@@ -1169,13 +1166,13 @@ int fts_ts_handle_trusted_touch_pvm(struct fts_ts_data *fts_data, int value)
 
 #endif
 
-static void fts_ts_trusted_touch_event_notify(struct fts_ts_data *fts_data, int event)
+static void fts_ts_trusted_touch_event_notify(struct fts_fts_data *fts_data, int event)
 {
 	atomic_set(&fts_data->trusted_touch_event, event);
 	sysfs_notify(&fts_data->dev->kobj, NULL, "trusted_touch_event");
 }
 
-static void fts_ts_trusted_touch_abort_handler(struct fts_ts_data *fts_data, int error)
+static void fts_ts_trusted_touch_abort_handler(struct fts_fts_data *fts_data, int error)
 {
 	atomic_set(&fts_data->trusted_touch_abort_status, error);
 	pr_err("TUI session aborted with failure:%d\n", error);
@@ -1190,7 +1187,7 @@ static void fts_ts_trusted_touch_abort_handler(struct fts_ts_data *fts_data, int
 #endif
 }
 
-static int fts_ts_vm_init(struct fts_ts_data *fts_data)
+static int fts_ts_vm_init(struct fts_fts_data *fts_data)
 {
 	int rc = 0;
 	struct trusted_touch_vm_info *vm_info;
@@ -1234,7 +1231,7 @@ fail:
 	return rc;
 }
 
-static void fts_ts_dt_parse_trusted_touch_info(struct fts_ts_data *fts_data)
+static void fts_ts_dt_parse_trusted_touch_info(struct fts_fts_data *fts_data)
 {
 	struct device_node *np = fts_data->dev->of_node;
 	int rc = 0;
@@ -1272,7 +1269,7 @@ static void fts_ts_dt_parse_trusted_touch_info(struct fts_ts_data *fts_data)
 			fts_data->touch_environment);
 }
 
-static void fts_ts_trusted_touch_init(struct fts_ts_data *fts_data)
+static void fts_ts_trusted_touch_init(struct fts_fts_data *fts_data)
 {
 	int rc = 0;
 
@@ -1321,7 +1318,7 @@ static void fts_ts_trusted_touch_init(struct fts_ts_data *fts_data)
 *  Output:
 *  Return: return 0 if tp valid, otherwise return error code
 *****************************************************************************/
-int fts_wait_tp_to_valid(void)
+int fts_wait_tp_to_valid(struct fts_fts_data *fts_data)
 {
 	int ret = 0;
 	int cnt = 0;
@@ -1331,8 +1328,8 @@ int fts_wait_tp_to_valid(void)
 	u8 chip_idl = fts_data->ic_info.ids.chip_idl;
 
 	do {
-		ret = fts_read_reg(FTS_REG_CHIP_ID, &idh);
-		ret = fts_read_reg(FTS_REG_CHIP_ID2, &idl);
+		ret = fts_read_reg(fts_data, FTS_REG_CHIP_ID, &idh);
+		ret = fts_read_reg(fts_data, FTS_REG_CHIP_ID2, &idl);
 		if ((ret < 0) || (idh != chip_idh) || (idl != chip_idl)) {
 			FTS_DEBUG("TP Not Ready,ReadData:0x%02x%02x", idh, idl);
 		} else if ((idh == chip_idh) && (idl == chip_idl)) {
@@ -1353,21 +1350,21 @@ int fts_wait_tp_to_valid(void)
 *  Output:
 *  Return:
 *****************************************************************************/
-void fts_tp_state_recovery(struct fts_ts_data *ts_data)
+void fts_tp_state_recovery(struct fts_fts_data *fts_data)
 {
 	FTS_FUNC_ENTER();
 	/* wait tp stable */
-	fts_wait_tp_to_valid();
+	fts_wait_tp_to_valid(fts_data);
 	/* recover TP charger state 0x8B */
 	/* recover TP glove state 0xC0 */
 	/* recover TP cover state 0xC1 */
-	fts_ex_mode_recovery(ts_data);
+	fts_ex_mode_recovery(fts_data);
 	/* recover TP gesture state 0xD0 */
-	fts_gesture_recovery(ts_data);
+	fts_gesture_recovery(fts_data);
 	FTS_FUNC_EXIT();
 }
 
-int fts_reset_proc(int hdelayms)
+int fts_reset_proc(struct fts_fts_data *fts_data, int hdelayms)
 {
 	FTS_DEBUG("tp reset");
 	gpio_direction_output(fts_data->pdata->reset_gpio, 0);
@@ -1380,7 +1377,7 @@ int fts_reset_proc(int hdelayms)
 	return 0;
 }
 
-void fts_irq_disable(void)
+void fts_irq_disable(struct fts_fts_data *fts_data)
 {
 	unsigned long irqflags;
 
@@ -1403,7 +1400,7 @@ void fts_irq_disable(void)
 	FTS_FUNC_EXIT();
 }
 
-void fts_irq_enable(void)
+void fts_irq_enable(struct fts_fts_data *fts_data)
 {
 	unsigned long irqflags = 0;
 
@@ -1426,7 +1423,7 @@ void fts_irq_enable(void)
 	FTS_FUNC_EXIT();
 }
 
-void fts_hid2std(void)
+void fts_hid2std(struct fts_fts_data *fts_data)
 {
 	int ret = 0;
 	u8 buf[3] = {0xEB, 0xAA, 0x09};
@@ -1434,7 +1431,7 @@ void fts_hid2std(void)
 	if (fts_data->bus_type != BUS_TYPE_I2C)
 		return;
 
-	ret = fts_write(buf, 3);
+	ret = fts_write(fts_data, buf, 3);
 	if (ret < 0) {
 		FTS_ERROR("hid2std cmd write fail");
 		return;
@@ -1442,7 +1439,7 @@ void fts_hid2std(void)
 
 	msleep(20);
 	buf[0] = buf[1] = buf[2] = 0;
-	ret = fts_read(NULL, 0, buf, 3);
+	ret = fts_read(fts_data, NULL, 0, buf, 3);
 	if (ret < 0)
 		FTS_ERROR("hid2std cmd read fail");
 	else if ((buf[0] == 0xEB) && (buf[1] == 0xAA) && (buf[2] == 0x08))
@@ -1453,7 +1450,7 @@ void fts_hid2std(void)
 }
 
 static int fts_get_chip_types(
-	struct fts_ts_data *ts_data,
+	struct fts_fts_data *fts_data,
 	u8 id_h, u8 id_l, bool fw_valid)
 {
 	int i = 0;
@@ -1480,11 +1477,11 @@ static int fts_get_chip_types(
 	if (i >= ctype_entries)
 		return -ENODATA;
 
-	ts_data->ic_info.ids = ctype[i];
+	fts_data->ic_info.ids = ctype[i];
 	return 0;
 }
 
-static int fts_read_bootid(struct fts_ts_data *ts_data, u8 *id)
+static int fts_read_bootid(struct fts_fts_data *fts_data, u8 *id)
 {
 	int ret = 0;
 	u8 chip_id[2] = { 0 };
@@ -1493,7 +1490,7 @@ static int fts_read_bootid(struct fts_ts_data *ts_data, u8 *id)
 
 	id_cmd[0] = FTS_CMD_START1;
 	id_cmd[1] = FTS_CMD_START2;
-	ret = fts_write(id_cmd, 2);
+	ret = fts_write(fts_data, id_cmd, 2);
 	if (ret < 0) {
 		FTS_ERROR("start cmd write fail");
 		return ret;
@@ -1502,11 +1499,11 @@ static int fts_read_bootid(struct fts_ts_data *ts_data, u8 *id)
 	msleep(FTS_CMD_START_DELAY);
 	id_cmd[0] = FTS_CMD_READ_ID;
 	id_cmd[1] = id_cmd[2] = id_cmd[3] = 0x00;
-	if (ts_data->ic_info.is_incell)
+	if (fts_data->ic_info.is_incell)
 		id_cmd_len = FTS_CMD_READ_ID_LEN_INCELL;
 	else
 		id_cmd_len = FTS_CMD_READ_ID_LEN;
-	ret = fts_read(id_cmd, id_cmd_len, chip_id, 2);
+	ret = fts_read(fts_data, id_cmd, id_cmd_len, chip_id, 2);
 	if ((ret < 0) || (0x0 == chip_id[0]) || (0x0 == chip_id[1])) {
 		FTS_ERROR("read boot id fail,read:0x%02x%02x", chip_id[0], chip_id[1]);
 		return -EIO;
@@ -1527,24 +1524,24 @@ static int fts_read_bootid(struct fts_ts_data *ts_data, u8 *id)
 * Output:
 * Return: return 0 if get correct ic information, otherwise return error code
 *****************************************************************************/
-static int fts_get_ic_information(struct fts_ts_data *ts_data)
+static int fts_get_ic_information(struct fts_fts_data *fts_data)
 {
 	int ret = 0;
 	int cnt = 0;
 	u8 chip_id[2] = { 0 };
-	u32 type = ts_data->pdata->type;
+	u32 type = fts_data->pdata->type;
 
-	ts_data->ic_info.is_incell = FTS_CHIP_IDC(type);
-	ts_data->ic_info.hid_supported = FTS_HID_SUPPORTTED(type);
+	fts_data->ic_info.is_incell = FTS_CHIP_IDC(type);
+	fts_data->ic_info.hid_supported = FTS_HID_SUPPORTTED(type);
 
 	do {
-		ret = fts_read_reg(FTS_REG_CHIP_ID, &chip_id[0]);
-		ret = fts_read_reg(FTS_REG_CHIP_ID2, &chip_id[1]);
+		ret = fts_read_reg(fts_data, FTS_REG_CHIP_ID, &chip_id[0]);
+		ret = fts_read_reg(fts_data, FTS_REG_CHIP_ID2, &chip_id[1]);
 		if ((ret < 0) || (0x0 == chip_id[0]) || (0x0 == chip_id[1])) {
 			FTS_DEBUG("i2c read invalid, read:0x%02x%02x",
 				chip_id[0], chip_id[1]);
 		} else {
-			ret = fts_get_chip_types(ts_data, chip_id[0], chip_id[1], VALID);
+			ret = fts_get_chip_types(fts_data, chip_id[0], chip_id[1], VALID);
 			if (!ret)
 				break;
 			else
@@ -1558,17 +1555,17 @@ static int fts_get_ic_information(struct fts_ts_data *ts_data)
 
 	if ((cnt * INTERVAL_READ_REG) >= TIMEOUT_READ_REG) {
 		FTS_INFO("fw is invalid, need read boot id");
-		if (ts_data->ic_info.hid_supported) {
-			fts_hid2std();
+		if (fts_data->ic_info.hid_supported) {
+			fts_hid2std(fts_data);
 		}
 
-		ret = fts_read_bootid(ts_data, &chip_id[0]);
+		ret = fts_read_bootid(fts_data, &chip_id[0]);
 		if (ret <  0) {
 			FTS_ERROR("read boot id fail");
 			return ret;
 		}
 
-		ret = fts_get_chip_types(ts_data, chip_id[0], chip_id[1], INVALID);
+		ret = fts_get_chip_types(fts_data, chip_id[0], chip_id[1], INVALID);
 		if (ret < 0) {
 			FTS_ERROR("can't get ic informaton");
 			return ret;
@@ -1576,7 +1573,7 @@ static int fts_get_ic_information(struct fts_ts_data *ts_data)
 	}
 
 	FTS_INFO("get ic information, chip id = 0x%02x%02x",
-		ts_data->ic_info.ids.chip_idh, ts_data->ic_info.ids.chip_idl);
+		fts_data->ic_info.ids.chip_idh, fts_data->ic_info.ids.chip_idl);
 
 	return 0;
 }
@@ -1609,7 +1606,7 @@ static void fts_show_touch_buffer(u8 *data, int datalen)
 	}
 }
 
-void fts_release_all_finger(void)
+void fts_release_all_finger(struct fts_fts_data *fts_data)
 {
 	struct input_dev *input_dev = fts_data->input_dev;
 #if FTS_MT_PROTOCOL_B_EN
@@ -1647,7 +1644,7 @@ void fts_release_all_finger(void)
 * Output:
 * Return: return 0 if it's key event, otherwise return error code
 *****************************************************************************/
-static int fts_input_report_key(struct fts_ts_data *data, int index)
+static int fts_input_report_key(struct fts_fts_data *data, int index)
 {
 	int i = 0;
 	int x = data->events[index].x;
@@ -1680,7 +1677,7 @@ static int fts_input_report_key(struct fts_ts_data *data, int index)
 }
 
 #if FTS_MT_PROTOCOL_B_EN
-static int fts_input_report_b(struct fts_ts_data *data)
+static int fts_input_report_b(struct fts_fts_data *data)
 {
 	int i = 0;
 	int uppoint = 0;
@@ -1763,7 +1760,7 @@ static int fts_input_report_b(struct fts_ts_data *data)
 }
 
 #else
-static int fts_input_report_a(struct fts_ts_data *data)
+static int fts_input_report_a(struct fts_fts_data *data)
 {
 	int i = 0;
 	int touchs = 0;
@@ -1828,7 +1825,7 @@ static int fts_input_report_a(struct fts_ts_data *data)
 }
 #endif
 
-static int fts_read_touchdata(struct fts_ts_data *data)
+static int fts_read_touchdata(struct fts_fts_data *data)
 {
 	int ret = 0;
 	u8 *buf = data->point_buf;
@@ -1843,7 +1840,7 @@ static int fts_read_touchdata(struct fts_ts_data *data)
 		}
 	}
 
-	ret = fts_read(buf, 1, buf + 1, data->pnt_buf_size - 1);
+	ret = fts_read(data, buf, 1, buf + 1, data->pnt_buf_size - 1);
 	if (ret < 0) {
 		FTS_ERROR("read touchdata failed, ret:%d", ret);
 		return ret;
@@ -1856,36 +1853,36 @@ static int fts_read_touchdata(struct fts_ts_data *data)
 	return 0;
 }
 
-static int fts_read_parse_touchdata(struct fts_ts_data *data)
+static int fts_read_parse_touchdata(struct fts_fts_data *fts_data)
 {
 	int ret = 0;
 	int i = 0;
 	u8 pointid = 0;
 	int base = 0;
-	struct ts_event *events = data->events;
-	int max_touch_num = data->pdata->max_touch_number;
-	u8 *buf = data->point_buf;
+	struct ts_event *events = fts_data->events;
+	int max_touch_num = fts_data->pdata->max_touch_number;
+	u8 *buf = fts_data->point_buf;
 
-	ret = fts_read_touchdata(data);
+	ret = fts_read_touchdata(fts_data);
 	if (ret) {
 		return ret;
 	}
 
-	data->point_num = buf[FTS_TOUCH_POINT_NUM] & 0x0F;
-	data->touch_point = 0;
+	fts_data->point_num = buf[FTS_TOUCH_POINT_NUM] & 0x0F;
+	fts_data->touch_point = 0;
 
-	if (data->ic_info.is_incell) {
-		if ((data->point_num == 0x0F) && (buf[2] == 0xFF) && (buf[3] == 0xFF)
+	if (fts_data->ic_info.is_incell) {
+		if ((fts_data->point_num == 0x0F) && (buf[2] == 0xFF) && (buf[3] == 0xFF)
 			&& (buf[4] == 0xFF) && (buf[5] == 0xFF) && (buf[6] == 0xFF)) {
 			FTS_DEBUG("touch buff is 0xff, need recovery state");
-			fts_release_all_finger();
-			fts_tp_state_recovery(data);
+			fts_release_all_finger(fts_data);
+			fts_tp_state_recovery(fts_data);
 			return -EIO;
 		}
 	}
 
-	if (data->point_num > max_touch_num) {
-		FTS_INFO("invalid point_num(%d)", data->point_num);
+	if (fts_data->point_num > max_touch_num) {
+		FTS_INFO("invalid point_num(%d)", fts_data->point_num);
 		return -EIO;
 	}
 
@@ -1899,7 +1896,7 @@ static int fts_read_parse_touchdata(struct fts_ts_data *data)
 			return -EINVAL;
 		}
 
-		data->touch_point++;
+		fts_data->touch_point++;
 		events[i].x = ((buf[FTS_TOUCH_X_H_POS + base] & 0x0F) << 8) +
 				(buf[FTS_TOUCH_X_L_POS + base] & 0xFF);
 		events[i].y = ((buf[FTS_TOUCH_Y_H_POS + base] & 0x0F) << 8) +
@@ -1909,13 +1906,13 @@ static int fts_read_parse_touchdata(struct fts_ts_data *data)
 		events[i].area = buf[FTS_TOUCH_AREA_POS + base] >> 4;
 		events[i].p =  buf[FTS_TOUCH_PRE_POS + base];
 
-		if (EVENT_DOWN(events[i].flag) && (data->point_num == 0)) {
+		if (EVENT_DOWN(events[i].flag) && (fts_data->point_num == 0)) {
 			FTS_INFO("abnormal touch data from fw");
 			return -EIO;
 		}
 	}
 
-	if (data->touch_point == 0) {
+	if (fts_data->touch_point == 0) {
 		FTS_INFO("no touch point information");
 		return -EIO;
 	}
@@ -1923,38 +1920,37 @@ static int fts_read_parse_touchdata(struct fts_ts_data *data)
 	return 0;
 }
 
-static void fts_irq_read_report(void)
+static void fts_irq_read_report(struct fts_fts_data *fts_data)
 {
 	int ret = 0;
-	struct fts_ts_data *ts_data = fts_data;
 
 #if FTS_ESDCHECK_EN
-	fts_esdcheck_set_intr(1);
+	fts_esdcheck_set_intr(fts_data, 1);
 #endif
 
 #if FTS_POINT_REPORT_CHECK_EN
-	fts_prc_queue_work(ts_data);
+	fts_prc_queue_work(fts_data);
 #endif
 
-	ret = fts_read_parse_touchdata(ts_data);
+	ret = fts_read_parse_touchdata(fts_data);
 	if (ret == 0) {
-		mutex_lock(&ts_data->report_mutex);
+		mutex_lock(&fts_data->report_mutex);
 #if FTS_MT_PROTOCOL_B_EN
-		fts_input_report_b(ts_data);
+		fts_input_report_b(fts_data);
 #else
-		fts_input_report_a(ts_data);
+		fts_input_report_a(fts_data);
 #endif
-		mutex_unlock(&ts_data->report_mutex);
+		mutex_unlock(&fts_data->report_mutex);
 	}
 
 #if FTS_ESDCHECK_EN
-	fts_esdcheck_set_intr(0);
+	fts_esdcheck_set_intr(fts_data, 0);
 #endif
 }
 
 static irqreturn_t fts_irq_handler(int irq, void *data)
 {
-	struct fts_ts_data *fts_data = data;
+	struct fts_fts_data *fts_data = data;
 
 	if (!fts_data) {
 		pr_err("%s: Invalid fts_data\n", __func__);
@@ -1964,39 +1960,39 @@ static irqreturn_t fts_irq_handler(int irq, void *data)
 	if (!mutex_trylock(&fts_data->transition_lock))
 		return IRQ_HANDLED;
 
-	fts_irq_read_report();
+	fts_irq_read_report(fts_data);
 	mutex_unlock(&fts_data->transition_lock);
 
 	return IRQ_HANDLED;
 }
 
-static int fts_irq_registration(struct fts_ts_data *ts_data)
+static int fts_irq_registration(struct fts_fts_data *fts_data)
 {
 	int ret = 0;
-	struct fts_ts_platform_data *pdata = ts_data->pdata;
+	struct fts_ts_platform_data *pdata = fts_data->pdata;
 
 #ifdef CONFIG_FTS_TRUSTED_TOUCH
 	pdata->irq_gpio_flags = IRQF_TRIGGER_RISING | IRQF_ONESHOT;
-	FTS_INFO("irq:%d, flag:%x", ts_data->irq, pdata->irq_gpio_flags);
-	ret = request_threaded_irq(ts_data->irq, NULL, fts_ts_irq_handler,
+	FTS_INFO("irq:%d, flag:%x", fts_data->irq, pdata->irq_gpio_flags);
+	ret = request_threaded_irq(fts_data->irq, NULL, fts_ts_irq_handler,
 				pdata->irq_gpio_flags,
-				FTS_DRIVER_NAME, ts_data);
+				FTS_DRIVER_NAME, fts_data);
 #else
-	ts_data->irq = gpio_to_irq(pdata->irq_gpio);
+	fts_data->irq = gpio_to_irq(pdata->irq_gpio);
 	pdata->irq_gpio_flags = IRQF_TRIGGER_FALLING | IRQF_ONESHOT;
-	FTS_INFO("irq:%d, flag:%x", ts_data->irq, pdata->irq_gpio_flags);
-	ret = request_threaded_irq(ts_data->irq, NULL, fts_ts_irq_handler,
+	FTS_INFO("irq:%d, flag:%x", fts_data->irq, pdata->irq_gpio_flags);
+	ret = request_threaded_irq(fts_data->irq, NULL, fts_ts_irq_handler,
 				pdata->irq_gpio_flags,
-				FTS_DRIVER_NAME, ts_data);
+				FTS_DRIVER_NAME, fts_data);
 #endif
 	return ret;
 }
 
-static int fts_input_init(struct fts_ts_data *ts_data)
+static int fts_input_init(struct fts_fts_data *fts_data)
 {
 	int ret = 0;
 	int key_num = 0;
-	struct fts_ts_platform_data *pdata = ts_data->pdata;
+	struct fts_ts_platform_data *pdata = fts_data->pdata;
 	struct input_dev *input_dev;
 
 	FTS_FUNC_ENTER();
@@ -2008,13 +2004,13 @@ static int fts_input_init(struct fts_ts_data *ts_data)
 
 	/* Init and register Input device */
 	input_dev->name = FTS_DRIVER_NAME;
-	if (ts_data->bus_type == BUS_TYPE_I2C)
+	if (fts_data->bus_type == BUS_TYPE_I2C)
 		input_dev->id.bustype = BUS_I2C;
 	else
 		input_dev->id.bustype = BUS_SPI;
-	input_dev->dev.parent = ts_data->dev;
+	input_dev->dev.parent = fts_data->dev;
 
-	input_set_drvdata(input_dev, ts_data);
+	input_set_drvdata(input_dev, fts_data);
 
 	__set_bit(EV_SYN, input_dev->evbit);
 	__set_bit(EV_ABS, input_dev->evbit);
@@ -2049,30 +2045,30 @@ static int fts_input_init(struct fts_ts_data *ts_data)
 		return ret;
 	}
 
-	ts_data->input_dev = input_dev;
+	fts_data->input_dev = input_dev;
 
 	FTS_FUNC_EXIT();
 	return 0;
 }
 
-static int fts_report_buffer_init(struct fts_ts_data *ts_data)
+static int fts_report_buffer_init(struct fts_fts_data *fts_data)
 {
 	int point_num = 0;
 	int events_num = 0;
 
 	point_num = FTS_MAX_POINTS_SUPPORT;
-	ts_data->pnt_buf_size = FTS_TOUCH_DATA_LEN + FTS_GESTURE_DATA_LEN;
-	ts_data->point_buf = (u8 *)kzalloc(ts_data->pnt_buf_size + 1, GFP_KERNEL);
-	if (!ts_data->point_buf) {
+	fts_data->pnt_buf_size = FTS_TOUCH_DATA_LEN + FTS_GESTURE_DATA_LEN;
+	fts_data->point_buf = (u8 *)kzalloc(fts_data->pnt_buf_size + 1, GFP_KERNEL);
+	if (!fts_data->point_buf) {
 		FTS_ERROR("failed to alloc memory for point buf");
 		return -ENOMEM;
 	}
 
 	events_num = point_num * sizeof(struct ts_event);
-	ts_data->events = (struct ts_event *)kzalloc(events_num, GFP_KERNEL);
-	if (!ts_data->events) {
+	fts_data->events = (struct ts_event *)kzalloc(events_num, GFP_KERNEL);
+	if (!fts_data->events) {
 		FTS_ERROR("failed to alloc memory for point events");
-		kfree_safe(ts_data->point_buf);
+		kfree_safe(fts_data->point_buf);
 		return -ENOMEM;
 	}
 
@@ -2084,7 +2080,7 @@ static int fts_report_buffer_init(struct fts_ts_data *ts_data)
 * Power Control
 *****************************************************************************/
 #if FTS_PINCTRL_EN
-static int fts_pinctrl_init(struct fts_ts_data *ts)
+static int fts_pinctrl_init(struct fts_fts_data *ts)
 {
 	int ret = 0;
 
@@ -2128,7 +2124,7 @@ err_pinctrl_get:
 	return ret;
 }
 
-static int fts_pinctrl_select_normal(struct fts_ts_data *ts)
+static int fts_pinctrl_select_normal(struct fts_fts_data *ts)
 {
 	int ret = 0;
 
@@ -2143,7 +2139,7 @@ static int fts_pinctrl_select_normal(struct fts_ts_data *ts)
 }
 
 #ifndef CONFIG_ARCH_QTI_VM
-static int fts_pinctrl_select_suspend(struct fts_ts_data *ts)
+static int fts_pinctrl_select_suspend(struct fts_fts_data *ts)
 {
 	int ret = 0;
 
@@ -2158,7 +2154,7 @@ static int fts_pinctrl_select_suspend(struct fts_ts_data *ts)
 }
 #endif
 
-static int fts_pinctrl_select_release(struct fts_ts_data *ts)
+static int fts_pinctrl_select_release(struct fts_fts_data *ts)
 {
 	int ret = 0;
 
@@ -2177,21 +2173,21 @@ static int fts_pinctrl_select_release(struct fts_ts_data *ts)
 }
 #endif /* FTS_PINCTRL_EN */
 
-static int fts_power_configure(struct fts_ts_data *ts_data, bool enable)
+static int fts_power_configure(struct fts_fts_data *fts_data, bool enable)
 {
 	int ret = 0;
 
 	FTS_FUNC_ENTER();
 
 	if (enable) {
-		if (regulator_count_voltages(ts_data->vdd) > 0) {
-			ret = regulator_set_load(ts_data->vdd, FTS_LOAD_MAX_UA);
+		if (regulator_count_voltages(fts_data->vdd) > 0) {
+			ret = regulator_set_load(fts_data->vdd, FTS_LOAD_MAX_UA);
 			if (ret) {
 				FTS_ERROR("vdd regulator set_load failed ret=%d", ret);
 				return ret;
 			}
 
-			ret = regulator_set_voltage(ts_data->vdd, FTS_VTG_MIN_UV,
+			ret = regulator_set_voltage(fts_data->vdd, FTS_VTG_MIN_UV,
 						FTS_VTG_MAX_UV);
 			if (ret) {
 				FTS_ERROR("vdd regulator set_vtg failed ret=%d", ret);
@@ -2199,15 +2195,15 @@ static int fts_power_configure(struct fts_ts_data *ts_data, bool enable)
 			}
 		}
 
-		if (!IS_ERR_OR_NULL(ts_data->vcc_i2c)) {
-			if (regulator_count_voltages(ts_data->vcc_i2c) > 0) {
-				ret = regulator_set_load(ts_data->vcc_i2c, FTS_LOAD_AVDD_UA);
+		if (!IS_ERR_OR_NULL(fts_data->vcc_i2c)) {
+			if (regulator_count_voltages(fts_data->vcc_i2c) > 0) {
+				ret = regulator_set_load(fts_data->vcc_i2c, FTS_LOAD_AVDD_UA);
 				if (ret) {
 					FTS_ERROR("vcc_i2c regulator set_load failed ret=%d", ret);
 					goto err_vdd_load;
 				}
 
-				ret = regulator_set_voltage(ts_data->vcc_i2c,
+				ret = regulator_set_voltage(fts_data->vcc_i2c,
 							FTS_I2C_VTG_MIN_UV,
 							FTS_I2C_VTG_MAX_UV);
 				if (ret) {
@@ -2217,17 +2213,17 @@ static int fts_power_configure(struct fts_ts_data *ts_data, bool enable)
 			}
 		}
 	} else {
-		if (regulator_count_voltages(ts_data->vdd) > 0) {
-			ret = regulator_set_load(ts_data->vdd, FTS_LOAD_DISABLE_UA);
+		if (regulator_count_voltages(fts_data->vdd) > 0) {
+			ret = regulator_set_load(fts_data->vdd, FTS_LOAD_DISABLE_UA);
 			if (ret) {
 				FTS_ERROR("vdd regulator set_load failed ret=%d", ret);
 				return ret;
 			}
 		}
 
-		if (!IS_ERR_OR_NULL(ts_data->vcc_i2c)) {
-			if (regulator_count_voltages(ts_data->vcc_i2c) > 0) {
-				ret = regulator_set_load(ts_data->vcc_i2c, FTS_LOAD_DISABLE_UA);
+		if (!IS_ERR_OR_NULL(fts_data->vcc_i2c)) {
+			if (regulator_count_voltages(fts_data->vcc_i2c) > 0) {
+				ret = regulator_set_load(fts_data->vcc_i2c, FTS_LOAD_DISABLE_UA);
 				if (ret) {
 					FTS_ERROR("vcc_i2c regulator set_load failed ret=%d", ret);
 					return ret;
@@ -2240,76 +2236,76 @@ static int fts_power_configure(struct fts_ts_data *ts_data, bool enable)
 	return ret;
 
 err_vcc_load:
-	regulator_set_load(ts_data->vcc_i2c, FTS_LOAD_DISABLE_UA);
+	regulator_set_load(fts_data->vcc_i2c, FTS_LOAD_DISABLE_UA);
 err_vdd_load:
-	regulator_set_load(ts_data->vdd, FTS_LOAD_DISABLE_UA);
+	regulator_set_load(fts_data->vdd, FTS_LOAD_DISABLE_UA);
 	return ret;
 }
 
-static int fts_ts_enable_reg(struct fts_ts_data *ts_data, bool enable)
+static int fts_ts_enable_reg(struct fts_fts_data *fts_data, bool enable)
 {
 	int ret = 0;
 
-	if (IS_ERR_OR_NULL(ts_data->vdd)) {
+	if (IS_ERR_OR_NULL(fts_data->vdd)) {
 		FTS_ERROR("vdd is invalid");
 		return -EINVAL;
 	}
 
 	if (enable) {
-		fts_power_configure(ts_data, true);
-		ret = regulator_enable(ts_data->vdd);
+		fts_power_configure(fts_data, true);
+		ret = regulator_enable(fts_data->vdd);
 		if (ret)
 			FTS_ERROR("enable vdd regulator failed,ret=%d", ret);
 
-		if (!IS_ERR_OR_NULL(ts_data->vcc_i2c)) {
-			ret = regulator_enable(ts_data->vcc_i2c);
+		if (!IS_ERR_OR_NULL(fts_data->vcc_i2c)) {
+			ret = regulator_enable(fts_data->vcc_i2c);
 			if (ret)
 				FTS_ERROR("enable vcc_i2c regulator failed,ret=%d", ret);
 		}
 	} else {
-		ret = regulator_disable(ts_data->vdd);
+		ret = regulator_disable(fts_data->vdd);
 		if (ret)
 			FTS_ERROR("disable vdd regulator failed,ret=%d", ret);
-		if (!IS_ERR_OR_NULL(ts_data->vcc_i2c)) {
-			ret = regulator_disable(ts_data->vcc_i2c);
+		if (!IS_ERR_OR_NULL(fts_data->vcc_i2c)) {
+			ret = regulator_disable(fts_data->vcc_i2c);
 			if (ret)
 				FTS_ERROR("disable vcc_i2c regulator failed,ret=%d", ret);
 		}
-		fts_power_configure(ts_data, false);
+		fts_power_configure(fts_data, false);
 	}
 
 	return ret;
 }
 
-static int fts_power_source_ctrl(struct fts_ts_data *ts_data, int enable)
+static int fts_power_source_ctrl(struct fts_fts_data *fts_data, int enable)
 {
 	int ret = 0;
 
-	if (IS_ERR_OR_NULL(ts_data->vdd)) {
+	if (IS_ERR_OR_NULL(fts_data->vdd)) {
 		FTS_ERROR("vdd is invalid");
 		return -EINVAL;
 	}
 
 	FTS_FUNC_ENTER();
 	if (enable) {
-		if (ts_data->power_disabled) {
+		if (fts_data->power_disabled) {
 			FTS_DEBUG("regulator enable !");
-			gpio_direction_output(ts_data->pdata->reset_gpio, 0);
+			gpio_direction_output(fts_data->pdata->reset_gpio, 0);
 			msleep(1);
-			ret = fts_ts_enable_reg(ts_data, true);
+			ret = fts_ts_enable_reg(fts_data, true);
 			if (ret)
 				FTS_ERROR("Touch reg enable failed\n");
-			ts_data->power_disabled = false;
+			fts_data->power_disabled = false;
 		}
 	} else {
-		if (!ts_data->power_disabled) {
+		if (!fts_data->power_disabled) {
 			FTS_DEBUG("regulator disable !");
-			gpio_direction_output(ts_data->pdata->reset_gpio, 0);
+			gpio_direction_output(fts_data->pdata->reset_gpio, 0);
 			msleep(1);
-			ret = fts_ts_enable_reg(ts_data, false);
+			ret = fts_ts_enable_reg(fts_data, false);
 			if (ret)
 				FTS_ERROR("Touch reg disable failed");
-			ts_data->power_disabled = true;
+			fts_data->power_disabled = true;
 		}
 	}
 
@@ -2327,29 +2323,29 @@ static int fts_power_source_ctrl(struct fts_ts_data *ts_data, int enable)
 * Output:
 * Return: return 0 if init power successfully, otherwise return error code
 *****************************************************************************/
-static int fts_power_source_init(struct fts_ts_data *ts_data)
+static int fts_power_source_init(struct fts_fts_data *fts_data)
 {
 	int ret = 0;
 
 	FTS_FUNC_ENTER();
-	ts_data->vdd = regulator_get(ts_data->dev, "vdd");
-	if (IS_ERR_OR_NULL(ts_data->vdd)) {
-		ret = PTR_ERR(ts_data->vdd);
+	fts_data->vdd = regulator_get(fts_data->dev, "vdd");
+	if (IS_ERR_OR_NULL(fts_data->vdd)) {
+		ret = PTR_ERR(fts_data->vdd);
 		FTS_ERROR("get vdd regulator failed,ret=%d", ret);
 		return ret;
 	}
 
-	ts_data->vcc_i2c = regulator_get(ts_data->dev, "vcc_i2c");
-	if (IS_ERR_OR_NULL(ts_data->vcc_i2c))
+	fts_data->vcc_i2c = regulator_get(fts_data->dev, "vcc_i2c");
+	if (IS_ERR_OR_NULL(fts_data->vcc_i2c))
 		FTS_INFO("get vcc_i2c regulator failed");
 
 #if FTS_PINCTRL_EN
-	fts_pinctrl_init(ts_data);
-	fts_pinctrl_select_normal(ts_data);
+	fts_pinctrl_init(fts_data);
+	fts_pinctrl_select_normal(fts_data);
 #endif
 
-	ts_data->power_disabled = true;
-	ret = fts_power_source_ctrl(ts_data, ENABLE);
+	fts_data->power_disabled = true;
+	ret = fts_power_source_ctrl(fts_data, ENABLE);
 	if (ret) {
 		FTS_ERROR("fail to enable power(regulator)");
 	}
@@ -2358,39 +2354,39 @@ static int fts_power_source_init(struct fts_ts_data *ts_data)
 	return ret;
 }
 
-static int fts_power_source_exit(struct fts_ts_data *ts_data)
+static int fts_power_source_exit(struct fts_fts_data *fts_data)
 {
 #if FTS_PINCTRL_EN
-	fts_pinctrl_select_release(ts_data);
+	fts_pinctrl_select_release(fts_data);
 #endif
 
-	fts_power_source_ctrl(ts_data, DISABLE);
+	fts_power_source_ctrl(fts_data, DISABLE);
 
-	if (!IS_ERR_OR_NULL(ts_data->vdd)) {
-		if (regulator_count_voltages(ts_data->vdd) > 0)
-			regulator_set_voltage(ts_data->vdd, 0, FTS_VTG_MAX_UV);
-		regulator_put(ts_data->vdd);
+	if (!IS_ERR_OR_NULL(fts_data->vdd)) {
+		if (regulator_count_voltages(fts_data->vdd) > 0)
+			regulator_set_voltage(fts_data->vdd, 0, FTS_VTG_MAX_UV);
+		regulator_put(fts_data->vdd);
 	}
 
-	if (!IS_ERR_OR_NULL(ts_data->vcc_i2c)) {
-		if (regulator_count_voltages(ts_data->vcc_i2c) > 0)
-			regulator_set_voltage(ts_data->vcc_i2c, 0, FTS_I2C_VTG_MAX_UV);
-		regulator_put(ts_data->vcc_i2c);
+	if (!IS_ERR_OR_NULL(fts_data->vcc_i2c)) {
+		if (regulator_count_voltages(fts_data->vcc_i2c) > 0)
+			regulator_set_voltage(fts_data->vcc_i2c, 0, FTS_I2C_VTG_MAX_UV);
+		regulator_put(fts_data->vcc_i2c);
 	}
 
 	return 0;
 }
 
 #ifndef CONFIG_ARCH_QTI_VM
-static int fts_power_source_suspend(struct fts_ts_data *ts_data)
+static int fts_power_source_suspend(struct fts_fts_data *fts_data)
 {
 	int ret = 0;
 
 #if FTS_PINCTRL_EN
-	fts_pinctrl_select_suspend(ts_data);
+	fts_pinctrl_select_suspend(fts_data);
 #endif
 
-	ret = fts_power_source_ctrl(ts_data, DISABLE);
+	ret = fts_power_source_ctrl(fts_data, DISABLE);
 	if (ret < 0) {
 		FTS_ERROR("power off fail, ret=%d", ret);
 	}
@@ -2398,15 +2394,15 @@ static int fts_power_source_suspend(struct fts_ts_data *ts_data)
 	return ret;
 }
 
-static int fts_power_source_resume(struct fts_ts_data *ts_data)
+static int fts_power_source_resume(struct fts_fts_data *fts_data)
 {
 	int ret = 0;
 
 #if FTS_PINCTRL_EN
-	fts_pinctrl_select_normal(ts_data);
+	fts_pinctrl_select_normal(fts_data);
 #endif
 
-	ret = fts_power_source_ctrl(ts_data, ENABLE);
+	ret = fts_power_source_ctrl(fts_data, ENABLE);
 	if (ret < 0) {
 		FTS_ERROR("power on fail, ret=%d", ret);
 	}
@@ -2416,7 +2412,7 @@ static int fts_power_source_resume(struct fts_ts_data *ts_data)
 #endif
 #endif /* FTS_POWER_SOURCE_CUST_EN */
 
-static int fts_gpio_configure(struct fts_ts_data *data)
+static int fts_gpio_configure(struct fts_fts_data *data)
 {
 	int ret = 0;
 
@@ -2595,16 +2591,16 @@ static int fts_parse_dt(struct device *dev, struct fts_ts_platform_data *pdata)
 #if defined(CONFIG_DRM)
 static void fts_resume_work(struct work_struct *work)
 {
-	struct fts_ts_data *ts_data = container_of(work, struct fts_ts_data,
+	struct fts_fts_data *fts_data = container_of(work, struct fts_fts_data,
 					resume_work);
 
-	fts_ts_resume(ts_data->dev);
+	fts_ts_resume(fts_data);
 }
 
 static void fts_ts_panel_notifier_callback(enum panel_event_notifier_tag tag,
 		 struct panel_event_notification *notification, void *client_data)
 {
-	struct fts_ts_data *ts_data = client_data;
+	struct fts_fts_data *fts_data = client_data;
 
 	if (!notification) {
 		pr_err("Invalid notification\n");
@@ -2624,7 +2620,7 @@ static void fts_ts_panel_notifier_callback(enum panel_event_notifier_tag tag,
 	case DRM_PANEL_EVENT_BLANK:
 		if (notification->notif_data.early_trigger) {
 			cancel_work_sync(&fts_data->resume_work);
-			fts_ts_suspend(ts_data->dev);
+			fts_ts_suspend(fts_data);
 		} else {
 			FTS_DEBUG("suspend notification post commit\n");
 		}
@@ -2647,10 +2643,10 @@ static void fts_ts_panel_notifier_callback(enum panel_event_notifier_tag tag,
 #elif defined(CONFIG_FB)
 static void fts_resume_work(struct work_struct *work)
 {
-	struct fts_ts_data *ts_data = container_of(work, struct fts_ts_data,
+	struct fts_fts_data *fts_data = container_of(work, struct fts_fts_data,
 					resume_work);
 
-	fts_ts_resume(ts_data->dev);
+	fts_ts_resume(fts_data);
 }
 
 static int fb_notifier_callback(struct notifier_block *self,
@@ -2658,7 +2654,7 @@ static int fb_notifier_callback(struct notifier_block *self,
 {
 	struct fb_event *evdata = data;
 	int *blank = NULL;
-	struct fts_ts_data *ts_data = container_of(self, struct fts_ts_data,
+	struct fts_fts_data *fts_data = container_of(self, struct fts_fts_data,
 					fb_notif);
 
 	if (!(event == FB_EARLY_EVENT_BLANK || event == FB_EVENT_BLANK)) {
@@ -2680,7 +2676,7 @@ static int fb_notifier_callback(struct notifier_block *self,
 	case FB_BLANK_POWERDOWN:
 		if (FB_EARLY_EVENT_BLANK == event) {
 			cancel_work_sync(&fts_data->resume_work);
-			fts_ts_suspend(ts_data->dev);
+			fts_ts_suspend(fts_data);
 		} else if (FB_EVENT_BLANK == event) {
 			FTS_INFO("suspend: event = %lu, not care\n", event);
 		}
@@ -2696,22 +2692,22 @@ static int fb_notifier_callback(struct notifier_block *self,
 #elif defined(CONFIG_HAS_EARLYSUSPEND)
 static void fts_ts_early_suspend(struct early_suspend *handler)
 {
-	struct fts_ts_data *ts_data = container_of(handler, struct fts_ts_data,
+	struct fts_fts_data *fts_data = container_of(handler, struct fts_fts_data,
 					early_suspend);
 
-	fts_ts_suspend(ts_data->dev);
+	fts_ts_suspend(fts_data);
 }
 
 static void fts_ts_late_resume(struct early_suspend *handler)
 {
-	struct fts_ts_data *ts_data = container_of(handler, struct fts_ts_data,
+	struct fts_fts_data *fts_data = container_of(handler, struct fts_fts_data,
 					early_suspend);
 
-	fts_ts_resume(ts_data->dev);
+	fts_ts_resume(fts_data);
 }
 #endif
 
-static int fts_ts_probe_delayed(struct fts_ts_data *fts_data)
+static int fts_ts_probe_delayed(struct fts_fts_data *fts_data)
 {
 	int ret = 0;
 
@@ -2742,7 +2738,7 @@ static int fts_ts_probe_delayed(struct fts_ts_data *fts_data)
 		goto err_power_init;
 	}
 #endif
-	fts_reset_proc(200);
+	fts_reset_proc(fts_data, 200);
 
 	ret = fts_get_ic_information(fts_data);
 	if (ret) {
@@ -2784,7 +2780,7 @@ err_gpio_config:
 	return ret;
 }
 
-static int fts_ts_probe_entry(struct fts_ts_data *ts_data)
+static int fts_ts_probe_entry(struct fts_fts_data *fts_data)
 {
 	int ret = 0;
 	int pdata_size = sizeof(struct fts_ts_platform_data);
@@ -2793,100 +2789,95 @@ static int fts_ts_probe_entry(struct fts_ts_data *ts_data)
 
 	FTS_FUNC_ENTER();
 	FTS_INFO("%s", FTS_DRIVER_VERSION);
-	ts_data->pdata = kzalloc(pdata_size, GFP_KERNEL);
-	if (!ts_data->pdata) {
+	fts_data->pdata = kzalloc(pdata_size, GFP_KERNEL);
+	if (!fts_data->pdata) {
 		FTS_ERROR("allocate memory for platform_data fail");
 		return -ENOMEM;
 	}
 
-	if (ts_data->dev->of_node) {
-		ret = fts_parse_dt(ts_data->dev, ts_data->pdata);
+	if (fts_data->dev->of_node) {
+		ret = fts_parse_dt(fts_data->dev, fts_data->pdata);
 		if (ret)
 			FTS_ERROR("device-tree parse fail");
 	} else {
-		if (ts_data->dev->platform_data) {
-			memcpy(ts_data->pdata, ts_data->dev->platform_data, pdata_size);
+		if (fts_data->dev->platform_data) {
+			memcpy(fts_data->pdata, fts_data->dev->platform_data, pdata_size);
 		} else {
 			FTS_ERROR("platform_data is null");
 			return -ENODEV;
 		}
 	}
 
-	ts_data->ts_workqueue = create_singlethread_workqueue("fts_wq");
-	if (!ts_data->ts_workqueue) {
+	fts_data->ts_workqueue = create_singlethread_workqueue("fts_wq");
+	if (!fts_data->ts_workqueue) {
 		FTS_ERROR("create fts workqueue fail");
 	}
 
-	spin_lock_init(&ts_data->irq_lock);
-	mutex_init(&ts_data->report_mutex);
-	mutex_init(&ts_data->bus_lock);
-	mutex_init(&ts_data->transition_lock);
+	spin_lock_init(&fts_data->irq_lock);
+	mutex_init(&fts_data->report_mutex);
+	mutex_init(&fts_data->bus_lock);
+	mutex_init(&fts_data->transition_lock);
 
 	/* Init communication interface */
-	ret = fts_bus_init(ts_data);
+	ret = fts_bus_init(fts_data);
 	if (ret) {
 		FTS_ERROR("bus initialize fail");
 		goto err_bus_init;
 	}
 
-	ret = fts_input_init(ts_data);
+	ret = fts_input_init(fts_data);
 	if (ret) {
 		FTS_ERROR("input initialize fail");
 		goto err_input_init;
 	}
 
-	ret = fts_report_buffer_init(ts_data);
+	ret = fts_report_buffer_init(fts_data);
 	if (ret) {
 		FTS_ERROR("report buffer init fail");
 		goto err_report_buffer;
 	}
 
-	ret = fts_create_apk_debug_channel(ts_data);
-	if (ret) {
-		FTS_ERROR("create apk debug node fail");
-	}
-
-	ret = fts_create_sysfs(ts_data);
+	ret = fts_create_sysfs(fts_data);
 	if (ret) {
 		FTS_ERROR("create sysfs node fail");
 	}
 
 #if FTS_POINT_REPORT_CHECK_EN
-	ret = fts_point_report_check_init(ts_data);
+	ret = fts_point_report_check_init(fts_data);
 	if (ret) {
 		FTS_ERROR("init point report check fail");
 	}
 #endif
 
-	ret = fts_ex_mode_init(ts_data);
+	ret = fts_ex_mode_init(fts_data);
 	if (ret) {
 		FTS_ERROR("init glove/cover/charger fail");
 	}
 
-	ret = fts_gesture_init(ts_data);
+	ret = fts_gesture_init(fts_data);
 	if (ret) {
 		FTS_ERROR("init gesture fail");
 	}
 
 
 #if FTS_ESDCHECK_EN
-	ret = fts_esdcheck_init(ts_data);
+	ret = fts_esdcheck_init(fts_data);
 	if (ret) {
 		FTS_ERROR("init esd check fail");
 	}
 #endif
 
 #ifdef CONFIG_FTS_TRUSTED_TOUCH
-	fts_ts_trusted_touch_init(ts_data);
-	mutex_init(&(ts_data->fts_clk_io_ctrl_mutex));
+	fts_ts_trusted_touch_init(fts_data);
+	mutex_init(&(fts_data->fts_clk_io_ctrl_mutex));
 #endif
 
 #ifndef CONFIG_ARCH_QTI_VM
-	if (ts_data->pdata->type == _FT8726) {
-		atomic_set(&ts_data->delayed_vm_probe_pending, 1);
-		ts_data->suspended = true;
+	if (fts_data->pdata->type == _FT8726) {
+		atomic_set(&fts_data->delayed_vm_probe_pending, 1);
+		fts_data->suspended = true;
 	} else {
-		ret = fts_ts_probe_delayed(ts_data);
+		ret = fts_ts_probe_delayed(fts_data);
 		if (ret) {
 			FTS_ERROR("Failed to enable resources\n");
 			goto err_probe_delayed;
@@ -2894,145 +2885,143 @@ static int fts_ts_probe_entry(struct fts_ts_data *ts_data)
 	}
 #else
 
-	ret = fts_ts_probe_delayed(ts_data);
+	ret = fts_ts_probe_delayed(fts_data);
 	if (ret) {
 		FTS_ERROR("Failed to enable resources\n");
 		goto err_probe_delayed;
 	}
 #endif
-	qts_en = of_property_read_bool(ts_data->dev->of_node, "focaltech,qts_en");
+	qts_en = of_property_read_bool(fts_data->dev->of_node, "focaltech,qts_en");
 	if (qts_en) {
-		mutex_init(&ts_data->tui_transition_lock);
-		fts_ts_fill_qts_vendor_data(&qts_vendor_data, ts_data);
+		mutex_init(&fts_data->tui_transition_lock);
+		fts_ts_fill_qts_vendor_data(&qts_vendor_data, fts_data);
 
 		ret = qts_client_register(qts_vendor_data);
 		if (ret) {
 			pr_err("qts client register failed, rc %d\n", ret);
 			goto err_probe_delayed;
 		}
-		ts_data->qts_en = qts_en;
+		fts_data->qts_en = qts_en;
 	}
 
 #if defined(CONFIG_DRM)
-	if (ts_data->ts_workqueue)
-		INIT_WORK(&ts_data->resume_work, fts_resume_work);
+	if (fts_data->ts_workqueue)
+		INIT_WORK(&fts_data->resume_work, fts_resume_work);
 
 #ifdef CONFIG_FTS_TRUSTED_TOUCH
 	if (!strcmp(fts_data->touch_environment, "pvm"))
 #else
 	if (active_panel)
 #endif
-		fts_ts_register_for_panel_events(ts_data->dev->of_node, ts_data);
+		fts_ts_register_for_panel_events(fts_data->dev->of_node, fts_data);
 #elif defined(CONFIG_FB)
-	if (ts_data->ts_workqueue) {
-		INIT_WORK(&ts_data->resume_work, fts_resume_work);
+	if (fts_data->ts_workqueue) {
+		INIT_WORK(&fts_data->resume_work, fts_resume_work);
 	}
-	ts_data->fb_notif.notifier_call = fb_notifier_callback;
-	ret = fb_register_client(&ts_data->fb_notif);
+	fts_data->fb_notif.notifier_call = fb_notifier_callback;
+	ret = fb_register_client(&fts_data->fb_notif);
 	if (ret) {
 		FTS_ERROR("[FB]Unable to register fb_notifier: %d", ret);
 	}
 #elif defined(CONFIG_HAS_EARLYSUSPEND)
-	ts_data->early_suspend.level = EARLY_SUSPEND_LEVEL_BLANK_SCREEN + FTS_SUSPEND_LEVEL;
-	ts_data->early_suspend.suspend = fts_ts_early_suspend;
-	ts_data->early_suspend.resume = fts_ts_late_resume;
-	register_early_suspend(&ts_data->early_suspend);
+	fts_data->early_suspend.level = EARLY_SUSPEND_LEVEL_BLANK_SCREEN + FTS_SUSPEND_LEVEL;
+	fts_data->early_suspend.suspend = fts_ts_early_suspend;
+	fts_data->early_suspend.resume = fts_ts_late_resume;
+	register_early_suspend(&fts_data->early_suspend);
 #endif
 
 	FTS_FUNC_EXIT();
 	return 0;
 
 err_probe_delayed:
-	kfree_safe(ts_data->point_buf);
-	kfree_safe(ts_data->events);
+	kfree_safe(fts_data->point_buf);
+	kfree_safe(fts_data->events);
 err_report_buffer:
-	input_unregister_device(ts_data->input_dev);
+	input_unregister_device(fts_data->input_dev);
 err_input_init:
-	if (ts_data->ts_workqueue)
-		destroy_workqueue(ts_data->ts_workqueue);
+	if (fts_data->ts_workqueue)
+		destroy_workqueue(fts_data->ts_workqueue);
 err_bus_init:
-	kfree_safe(ts_data->bus_tx_buf);
-	kfree_safe(ts_data->bus_rx_buf);
-	kfree_safe(ts_data->pdata);
+	kfree_safe(fts_data->bus_tx_buf);
+	kfree_safe(fts_data->bus_rx_buf);
+	kfree_safe(fts_data->pdata);
 
 	FTS_FUNC_EXIT();
 	return ret;
 }
 
-static int fts_ts_remove_entry(struct fts_ts_data *ts_data)
+static int fts_ts_remove_entry(struct fts_fts_data *fts_data)
 {
 	FTS_FUNC_ENTER();
 
 #if FTS_POINT_REPORT_CHECK_EN
-	fts_point_report_check_exit(ts_data);
+	fts_point_report_check_exit(fts_data);
 #endif
 
-	fts_release_apk_debug_channel(ts_data);
-	fts_remove_sysfs(ts_data);
-	fts_ex_mode_exit(ts_data);
+	fts_remove_sysfs(fts_data);
+	fts_ex_mode_exit(fts_data);
 
-	fts_fwupg_exit(ts_data);
+	fts_fwupg_exit(fts_data);
 
 
 #if FTS_ESDCHECK_EN
-	fts_esdcheck_exit(ts_data);
+	fts_esdcheck_exit(fts_data);
 #endif
 
-	fts_gesture_exit(ts_data);
-	fts_bus_exit(ts_data);
+	fts_gesture_exit(fts_data);
+	fts_bus_exit(fts_data);
 
-	free_irq(ts_data->irq, ts_data);
-	input_unregister_device(ts_data->input_dev);
+	free_irq(fts_data->irq, fts_data);
+	input_unregister_device(fts_data->input_dev);
 
-	if (ts_data->ts_workqueue)
-		destroy_workqueue(ts_data->ts_workqueue);
+	if (fts_data->ts_workqueue)
+		destroy_workqueue(fts_data->ts_workqueue);
 
 #if defined(CONFIG_DRM)
-	if (active_panel && ts_data->notifier_cookie)
-		panel_event_notifier_unregister(ts_data->notifier_cookie);
+	if (active_panel && fts_data->notifier_cookie)
+		panel_event_notifier_unregister(fts_data->notifier_cookie);
 
 #elif defined(CONFIG_FB)
-	if (fb_unregister_client(&ts_data->fb_notif))
+	if (fb_unregister_client(&fts_data->fb_notif))
 		FTS_ERROR("Error occurred while unregistering fb_notifier.");
 #elif defined(CONFIG_HAS_EARLYSUSPEND)
-	unregister_early_suspend(&ts_data->early_suspend);
+	unregister_early_suspend(&fts_data->early_suspend);
 #endif
 
-	if (gpio_is_valid(ts_data->pdata->reset_gpio))
-		gpio_free(ts_data->pdata->reset_gpio);
+	if (gpio_is_valid(fts_data->pdata->reset_gpio))
+		gpio_free(fts_data->pdata->reset_gpio);
 
-	if (gpio_is_valid(ts_data->pdata->irq_gpio))
-		gpio_free(ts_data->pdata->irq_gpio);
+	if (gpio_is_valid(fts_data->pdata->irq_gpio))
+		gpio_free(fts_data->pdata->irq_gpio);
 
 #ifndef CONFIG_ARCH_QTI_VM
 #if FTS_POWER_SOURCE_CUST_EN
-	fts_power_source_exit(ts_data);
+	fts_power_source_exit(fts_data);
 #endif
 #endif
 
-	kfree_safe(ts_data->point_buf);
-	kfree_safe(ts_data->events);
+	kfree_safe(fts_data->point_buf);
+	kfree_safe(fts_data->events);
 
-	kfree_safe(ts_data->pdata);
-	kfree_safe(ts_data);
+	kfree_safe(fts_data->pdata);
+	kfree_safe(fts_data);
 
 	FTS_FUNC_EXIT();
 
 	return 0;
 }
 
-static int fts_ts_suspend(struct device *dev)
+static int fts_ts_suspend(struct fts_fts_data *fts_data)
 {
 	int ret = 0;
-	struct fts_ts_data *ts_data = fts_data;
 
 	FTS_FUNC_ENTER();
-	if (ts_data->suspended) {
+	if (fts_data->suspended) {
 		FTS_INFO("Already in suspend state");
 		return 0;
 	}
 
-	if (ts_data->fw_loading) {
+	if (fts_data->fw_loading) {
 		FTS_INFO("fw upgrade in process, can't suspend");
 		return 0;
 	}
@@ -3044,108 +3033,107 @@ static int fts_ts_suspend(struct device *dev)
 			&fts_data->trusted_touch_powerdown);
 #endif
 
-	mutex_lock(&ts_data->transition_lock);
+	mutex_lock(&fts_data->transition_lock);
 
 #if FTS_ESDCHECK_EN
-	fts_esdcheck_suspend();
+	fts_esdcheck_suspend(fts_data);
 #endif
 
-	if (ts_data->gesture_mode) {
-		fts_gesture_suspend(ts_data);
+	if (fts_data->gesture_mode) {
+		fts_gesture_suspend(fts_data);
 	} else {
-		fts_irq_disable();
+		fts_irq_disable(fts_data);
 
 		FTS_INFO("make TP enter into sleep mode");
-		ret = fts_write_reg(FTS_REG_POWER_MODE, FTS_REG_POWER_MODE_SLEEP);
+		ret = fts_write_reg(fts_data, FTS_REG_POWER_MODE, FTS_REG_POWER_MODE_SLEEP);
 		if (ret < 0)
 			FTS_ERROR("set TP to sleep mode fail, ret=%d", ret);
 
 #ifndef CONFIG_ARCH_QTI_VM
-		if (!ts_data->ic_info.is_incell) {
+		if (!fts_data->ic_info.is_incell) {
 #if FTS_POWER_SOURCE_CUST_EN
-			ret = fts_power_source_suspend(ts_data);
+			ret = fts_power_source_suspend(fts_data);
 			if (ret < 0) {
 				FTS_ERROR("power enter suspend fail");
 			}
 #endif
 		} else {
 #if FTS_PINCTRL_EN
-			fts_pinctrl_select_suspend(ts_data);
+			fts_pinctrl_select_suspend(fts_data);
 #endif
-			gpio_direction_output(ts_data->pdata->reset_gpio, 0);
+			gpio_direction_output(fts_data->pdata->reset_gpio, 0);
 		}
 #endif
 	}
 
-	fts_release_all_finger();
-	ts_data->suspended = true;
-	mutex_unlock(&ts_data->transition_lock);
+	fts_release_all_finger(fts_data);
+	fts_data->suspended = true;
+	mutex_unlock(&fts_data->transition_lock);
 	FTS_FUNC_EXIT();
 	return 0;
 }
 
-static int fts_ts_resume(struct device *dev)
+static int fts_ts_resume(struct fts_fts_data *fts_data)
 {
-	struct fts_ts_data *ts_data = fts_data;
 	int ret = 0;
 
 	FTS_FUNC_ENTER();
-	if (!ts_data->suspended) {
+	if (!fts_data->suspended) {
 		FTS_DEBUG("Already in awake state");
 		return 0;
 	}
 
 #ifdef CONFIG_FTS_TRUSTED_TOUCH
 
-	if (atomic_read(&ts_data->trusted_touch_transition))
+	if (atomic_read(&fts_data->trusted_touch_transition))
 		wait_for_completion_interruptible(
-			&ts_data->trusted_touch_powerdown);
+			&fts_data->trusted_touch_powerdown);
 #endif
-	if (ts_data->pdata->type == _FT8726 &&
-			atomic_read(&ts_data->delayed_vm_probe_pending)) {
-		ret = fts_ts_probe_delayed(ts_data);
+	if (fts_data->pdata->type == _FT8726 &&
+			atomic_read(&fts_data->delayed_vm_probe_pending)) {
+		ret = fts_ts_probe_delayed(fts_data);
 		if (ret) {
 			FTS_ERROR("Failed to enable resources\n");
 			return ret;
 		}
-		ts_data->suspended = false;
-		atomic_set(&ts_data->delayed_vm_probe_pending, 0);
+		fts_data->suspended = false;
+		atomic_set(&fts_data->delayed_vm_probe_pending, 0);
 		return ret;
 	}
 
-	mutex_lock(&ts_data->transition_lock);
+	mutex_lock(&fts_data->transition_lock);
 
-	fts_release_all_finger();
+	fts_release_all_finger(fts_data);
 
 #ifndef CONFIG_ARCH_QTI_VM
-	if (!ts_data->ic_info.is_incell) {
+	if (!fts_data->ic_info.is_incell) {
 #if FTS_POWER_SOURCE_CUST_EN
-		fts_power_source_resume(ts_data);
+		fts_power_source_resume(fts_data);
 #endif
 	} else {
 #if FTS_PINCTRL_EN
-		fts_pinctrl_select_normal(ts_data);
+		fts_pinctrl_select_normal(fts_data);
 #endif
 	}
 
-	fts_reset_proc(200);
+	fts_reset_proc(fts_data, 200);
 
 #endif
-	fts_wait_tp_to_valid();
-	fts_ex_mode_recovery(ts_data);
+	fts_wait_tp_to_valid(fts_data);
+	fts_ex_mode_recovery(fts_data);
 
 #if FTS_ESDCHECK_EN
-	fts_esdcheck_resume();
+	fts_esdcheck_resume(fts_data);
 #endif
 
-	if (ts_data->gesture_mode) {
-		fts_gesture_resume(ts_data);
+	if (fts_data->gesture_mode) {
+		fts_gesture_resume(fts_data);
 	} else {
-		fts_irq_enable();
+		fts_irq_enable(fts_data);
 	}
 
-	ts_data->suspended = false;
-	mutex_unlock(&ts_data->transition_lock);
+	fts_data->suspended = false;
+	mutex_unlock(&fts_data->transition_lock);
 	FTS_FUNC_EXIT();
 	return 0;
 }
@@ -3224,48 +3212,50 @@ out:
 
 static int fts_ts_suspend_helper(void *data)
 {
-	struct fts_ts_data *ts_data = data;
+	struct fts_fts_data *fts_data = data;
 
-	if (!ts_data)
+	if (!fts_data)
 		return 0;
 
-	return fts_ts_suspend(ts_data->dev);
+	return fts_ts_suspend(fts_data);
 }
 
 static int fts_ts_resume_helper(void *data)
 {
-	struct fts_ts_data *ts_data = data;
+	struct fts_fts_data *fts_data = data;
 
-	if (!ts_data)
+	if (!fts_data)
 		return 0;
 
-	return fts_ts_resume(ts_data->dev);
+	return fts_ts_resume(fts_data);
 }
 
 static int fts_ts_enable_touch_irq(void *data, bool enable)
 {
+	struct fts_fts_data *fts_data = data;
+
 	if (enable)
-		fts_irq_enable();
+		fts_irq_enable(fts_data);
 	else
-		fts_irq_disable();
+		fts_irq_disable(fts_data);
 
 	return 0;
 }
 
 static int fts_ts_pre_la_tui_enable(void *data)
 {
-	struct fts_ts_data *ts_data = data;
+	struct fts_fts_data *fts_data = data;
 
-	mutex_lock(&ts_data->tui_transition_lock);
+	mutex_lock(&fts_data->tui_transition_lock);
 
 	return 0;
 }
 
 static int fts_ts_post_la_tui_enable(void *data)
 {
-	struct fts_ts_data *ts_data = data;
+	struct fts_fts_data *fts_data = data;
 
-	mutex_unlock(&ts_data->tui_transition_lock);
+	mutex_unlock(&fts_data->tui_transition_lock);
 	return 0;
 }
 
@@ -3276,48 +3266,48 @@ static int fts_ts_post_le_tui_enable(void *data)
 
 static int fts_ts_post_le_tui_disable(void *data)
 {
-	fts_release_all_finger();
+	struct fts_fts_data *fts_data = data;
+
+	fts_release_all_finger(fts_data);
 	return 0;
 }
 
 static int fts_ts_get_irq_num(void *data)
 {
-	struct fts_ts_data *ts_data = data;
+	struct fts_fts_data *fts_data = data;
 
-	return ts_data->irq;
+	return fts_data->irq;
 }
 
 static int fts_ts_set_irq_num(void *data, int irq)
 {
-	struct fts_ts_data *ts_data = data;
+	struct fts_fts_data *fts_data = data;
 
-	ts_data->irq = irq;
+	fts_data->irq = irq;
 
 	return 0;
 }
 
 static irqreturn_t fts_ts_irq_handler(int irq, void *data)
 {
-	struct fts_ts_data *ts_data = data;
+	struct fts_fts_data *fts_data = data;
 
-	if (!mutex_trylock(&ts_data->tui_transition_lock))
+	if (!mutex_trylock(&fts_data->tui_transition_lock))
 		return IRQ_HANDLED;
 
 	fts_irq_handler(irq, data);
 
-	mutex_unlock(&ts_data->tui_transition_lock);
+	mutex_unlock(&fts_data->tui_transition_lock);
 
 	return IRQ_HANDLED;
 }
 
 static void fts_ts_fill_qts_vendor_data(struct qts_vendor_data *qts_vendor_data,
-		 struct fts_ts_data *core_data)
+		 struct fts_fts_data *core_data)
 {
-	struct device_node *node;
+	struct device_node *node = core_data->dev->of_node;
 	const char *touch_type;
 	int rc = 0;
-
-	node = core_data->dev->of_node;
 
 	rc = of_property_read_string(node, "focaltech,touch-type", &touch_type);
 	if (rc) {
@@ -3371,7 +3361,7 @@ static void fts_ts_fill_qts_vendor_data(struct qts_vendor_data *qts_vendor_data,
 static int fts_ts_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {
 	int ret = 0;
-	struct fts_ts_data *ts_data = NULL;
+	struct fts_fts_data *fts_data = NULL;
 	struct device_node *dp = client->dev.of_node;
 
 	FTS_INFO("Touch Screen(I2C BUS) driver prboe...");
@@ -3394,24 +3384,23 @@ static int fts_ts_i2c_probe(struct i2c_client *client, const struct i2c_device_i
 	}
 
 	/* malloc memory for global struct variable */
-	ts_data = (struct fts_ts_data *)kzalloc(sizeof(*ts_data), GFP_KERNEL);
-	if (!ts_data) {
+	fts_data = (struct fts_fts_data *)kzalloc(sizeof(*fts_data), GFP_KERNEL);
+	if (!fts_data) {
 		FTS_ERROR("allocate memory for fts_data fail");
 		return -ENOMEM;
 	}
 
-	fts_data = ts_data;
-	ts_data->client = client;
-	ts_data->dev = &client->dev;
-	ts_data->log_level = 1;
-	ts_data->fw_is_running = 0;
-	ts_data->bus_type = BUS_TYPE_I2C;
-	i2c_set_clientdata(client, ts_data);
+	fts_data->client = client;
+	fts_data->dev = &client->dev;
+	fts_data->log_level = 1;
+	fts_data->fw_is_running = 0;
+	fts_data->bus_type = BUS_TYPE_I2C;
+	i2c_set_clientdata(client, fts_data);
 
-	ret = fts_ts_probe_entry(ts_data);
+	ret = fts_ts_probe_entry(fts_data);
 	if (ret) {
 		FTS_ERROR("Touch Screen(I2C BUS) driver probe fail");
-		kfree_safe(ts_data);
+		kfree_safe(fts_data);
 		return ret;
 	}
 
@@ -3476,7 +3465,7 @@ static void __exit fts_ts_i2c_exit(void)
 static int fts_ts_spi_probe(struct spi_device *spi)
 {
 	int ret = 0;
-	struct fts_ts_data *ts_data = NULL;
+	struct fts_fts_data *fts_data = NULL;
 	struct device_node *dp = spi->dev.of_node;
 
 	FTS_INFO("Touch Screen(SPI BUS) driver prboe...");
@@ -3503,24 +3492,23 @@ static int fts_ts_spi_probe(struct spi_device *spi)
 	}
 
 	/* malloc memory for global struct variable */
-	ts_data = kzalloc(sizeof(*ts_data), GFP_KERNEL);
-	if (!ts_data) {
+	fts_data = kzalloc(sizeof(*fts_data), GFP_KERNEL);
+	if (!fts_data) {
 		FTS_ERROR("allocate memory for fts_data fail");
 		return -ENOMEM;
 	}
 
-	fts_data = ts_data;
-	ts_data->spi = spi;
-	ts_data->dev = &spi->dev;
-	ts_data->log_level = 1;
+	fts_data->spi = spi;
+	fts_data->dev = &spi->dev;
+	fts_data->log_level = 1;
 
-	ts_data->bus_type = BUS_TYPE_SPI_V2;
-	spi_set_drvdata(spi, ts_data);
+	fts_data->bus_type = BUS_TYPE_SPI_V2;
+	spi_set_drvdata(spi, fts_data);
 
-	ret = fts_ts_probe_entry(ts_data);
+	ret = fts_ts_probe_entry(fts_data);
 	if (ret) {
 		FTS_ERROR("Touch Screen(SPI BUS) driver probe fail");
-		kfree_safe(ts_data);
+		kfree_safe(fts_data);
 		return ret;
 	}
 

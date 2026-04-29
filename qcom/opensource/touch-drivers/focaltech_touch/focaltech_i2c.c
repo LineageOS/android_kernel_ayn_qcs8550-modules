@@ -50,7 +50,6 @@
 /*****************************************************************************
 * Static variables
 *****************************************************************************/
-static struct fts_ts_data *ts_data;
 
 /*****************************************************************************
 * Global variable or extern global variabls/functions
@@ -63,7 +62,7 @@ static struct fts_ts_data *ts_data;
 /*****************************************************************************
 * functions body
 *****************************************************************************/
-static int fts_i2c_read(u8 *cmd, u32 cmdlen, u8 *data, u32 datalen)
+static int fts_i2c_read(struct fts_fts_data * fts_data, u8 * cmd, u32 cmdlen, u8 *data, u32 datalen)
 {
 	int ret = 0;
 	int i = 0;
@@ -72,25 +71,25 @@ static int fts_i2c_read(u8 *cmd, u32 cmdlen, u8 *data, u32 datalen)
 	int msg_num = 0;
 
 	/* must have data when read */
-	if (!ts_data || !ts_data->client || !data || !datalen
+	if (!fts_data || !fts_data->client || !data || !datalen
 		|| (datalen >= I2C_BUF_LENGTH) || (cmdlen >= I2C_BUF_LENGTH)) {
 		FTS_ERROR("fts_data/client/cmdlen(%d)/data/datalen(%d) is invalid",
 			cmdlen, datalen);
 		return -EINVAL;
 	}
 
-	mutex_lock(&ts_data->bus_lock);
+	mutex_lock(&fts_data->bus_lock);
 	memset(&msg_list[0], 0, sizeof(struct i2c_msg));
 	memset(&msg_list[1], 0, sizeof(struct i2c_msg));
-	memcpy(ts_data->bus_tx_buf, cmd, cmdlen);
-	msg_list[0].addr = ts_data->client->addr;
+	memcpy(fts_data->bus_tx_buf, cmd, cmdlen);
+	msg_list[0].addr = fts_data->client->addr;
 	msg_list[0].flags = 0;
 	msg_list[0].len = cmdlen;
-	msg_list[0].buf = ts_data->bus_tx_buf;
-	msg_list[1].addr = ts_data->client->addr;
+	msg_list[0].buf = fts_data->bus_tx_buf;
+	msg_list[1].addr = fts_data->client->addr;
 	msg_list[1].flags = I2C_M_RD;
 	msg_list[1].len = datalen;
-	msg_list[1].buf = ts_data->bus_rx_buf;
+	msg_list[1].buf = fts_data->bus_rx_buf;
 	if (cmd && cmdlen) {
 		msg = &msg_list[0];
 		msg_num = 2;
@@ -100,23 +99,23 @@ static int fts_i2c_read(u8 *cmd, u32 cmdlen, u8 *data, u32 datalen)
 	}
 
 	for (i = 0; i < I2C_RETRY_NUMBER; i++) {
-		ret = i2c_transfer(ts_data->client->adapter, msg, msg_num);
+		ret = i2c_transfer(fts_data->client->adapter, msg, msg_num);
 		if (ret < 0) {
 #ifdef CONFIG_FTS_TRUSTED_TOUCH
 #ifdef CONFIG_ARCH_QTI_VM
-			if (atomic_read(&ts_data->trusted_touch_enabled) &&
+			if (atomic_read(&fts_data->trusted_touch_enabled) &&
 					ret == -ECONNRESET) {
 				pr_err("failed i2c read reacquiring session\n");
 				pm_runtime_put_sync(
-					ts_data->client->adapter->dev.parent);
+					fts_data->client->adapter->dev.parent);
 				pm_runtime_get_sync(
-					ts_data->client->adapter->dev.parent);
+					fts_data->client->adapter->dev.parent);
 			}
 #endif
 #endif
 			FTS_ERROR("i2c_transfer(read) fail,ret:%d", ret);
 		} else {
-			memcpy(data, ts_data->bus_rx_buf, datalen);
+			memcpy(data, fts_data->bus_rx_buf, datalen);
 			break;
 		}
 	}
@@ -125,46 +124,46 @@ static int fts_i2c_read(u8 *cmd, u32 cmdlen, u8 *data, u32 datalen)
 #ifdef CONFIG_FTS_TRUSTED_TOUCH
 #ifdef CONFIG_ARCH_QTI_VM
 		pr_err("initiating abort due to i2c xfer failure\n");
-		fts_ts_trusted_touch_tvm_i2c_failure_report(ts_data);
+		fts_ts_trusted_touch_tvm_i2c_failure_report(fts_data);
 #endif
 #endif
 	}
 
-	mutex_unlock(&ts_data->bus_lock);
+	mutex_unlock(&fts_data->bus_lock);
 	return ret;
 }
 
-static int fts_i2c_write(u8 *writebuf, u32 writelen)
+static int fts_i2c_write(struct fts_fts_data * fts_data, u8 *writebuf, u32 writelen)
 {
 	int ret = 0;
 	int i = 0;
 	struct i2c_msg msgs;
 
-	if (!ts_data || !ts_data->client || !writebuf || !writelen
+	if (!fts_data || !fts_data->client || !writebuf || !writelen
 		|| (writelen >= I2C_BUF_LENGTH)) {
 		FTS_ERROR("fts_data/client/data/datalen(%d) is invalid", writelen);
 		return -EINVAL;
 	}
 
-	mutex_lock(&ts_data->bus_lock);
+	mutex_lock(&fts_data->bus_lock);
 	memset(&msgs, 0, sizeof(struct i2c_msg));
-	memcpy(ts_data->bus_tx_buf, writebuf, writelen);
-	msgs.addr = ts_data->client->addr;
+	memcpy(fts_data->bus_tx_buf, writebuf, writelen);
+	msgs.addr = fts_data->client->addr;
 	msgs.flags = 0;
 	msgs.len = writelen;
-	msgs.buf = ts_data->bus_tx_buf;
+	msgs.buf = fts_data->bus_tx_buf;
 	for (i = 0; i < I2C_RETRY_NUMBER; i++) {
-		ret = i2c_transfer(ts_data->client->adapter, &msgs, 1);
+		ret = i2c_transfer(fts_data->client->adapter, &msgs, 1);
 		if (ret < 0) {
 #ifdef CONFIG_FTS_TRUSTED_TOUCH
 #ifdef CONFIG_ARCH_QTI_VM
-			if (atomic_read(&ts_data->trusted_touch_enabled) &&
+			if (atomic_read(&fts_data->trusted_touch_enabled) &&
 				ret == -ECONNRESET){
 				pr_err("failed i2c write reacquiring session\n");
 				pm_runtime_put_sync(
-					ts_data->client->adapter->dev.parent);
+					fts_data->client->adapter->dev.parent);
 				pm_runtime_get_sync(
-					ts_data->client->adapter->dev.parent);
+					fts_data->client->adapter->dev.parent);
 			}
 #endif
 #endif
@@ -178,25 +177,25 @@ static int fts_i2c_write(u8 *writebuf, u32 writelen)
 #ifdef CONFIG_FTS_TRUSTED_TOUCH
 #ifdef CONFIG_ARCH_QTI_VM
 		pr_err("initiating abort due to i2c xfer failure\n");
-		fts_ts_trusted_touch_tvm_i2c_failure_report(ts_data);
+		fts_ts_trusted_touch_tvm_i2c_failure_report(fts_data);
 #endif
 #endif
 	}
-	mutex_unlock(&ts_data->bus_lock);
+	mutex_unlock(&fts_data->bus_lock);
 	return ret;
 }
 
-static int fts_i2c_init(struct fts_ts_data *ts_data)
+static int fts_i2c_init(struct fts_fts_data *fts_data)
 {
 	FTS_FUNC_ENTER();
-	ts_data->bus_tx_buf = kzalloc(I2C_BUF_LENGTH, GFP_KERNEL);
-	if (ts_data->bus_tx_buf == NULL) {
+	fts_data->bus_tx_buf = kzalloc(I2C_BUF_LENGTH, GFP_KERNEL);
+	if (fts_data->bus_tx_buf == NULL) {
 		FTS_ERROR("failed to allocate memory for bus_tx_buf");
 		return -ENOMEM;
 	}
 
-	ts_data->bus_rx_buf = kzalloc(I2C_BUF_LENGTH, GFP_KERNEL);
-	if (ts_data->bus_rx_buf == NULL) {
+	fts_data->bus_rx_buf = kzalloc(I2C_BUF_LENGTH, GFP_KERNEL);
+	if (fts_data->bus_rx_buf == NULL) {
 		FTS_ERROR("failed to allocate memory for bus_rx_buf");
 		return -ENOMEM;
 	}
@@ -204,17 +203,17 @@ static int fts_i2c_init(struct fts_ts_data *ts_data)
 	return 0;
 }
 
-static int fts_i2c_exit(struct fts_ts_data *ts_data)
+static int fts_i2c_exit(struct fts_fts_data *fts_data)
 {
 	FTS_FUNC_ENTER();
-	if (ts_data && ts_data->bus_tx_buf) {
-		kfree(ts_data->bus_tx_buf);
-		ts_data->bus_tx_buf = NULL;
+	if (fts_data && fts_data->bus_tx_buf) {
+		kfree(fts_data->bus_tx_buf);
+		fts_data->bus_tx_buf = NULL;
 	}
 
-	if (ts_data && ts_data->bus_rx_buf) {
-		kfree(ts_data->bus_rx_buf);
-		ts_data->bus_rx_buf = NULL;
+	if (fts_data && fts_data->bus_rx_buf) {
+		kfree(fts_data->bus_rx_buf);
+		fts_data->bus_rx_buf = NULL;
 	}
 	FTS_FUNC_EXIT();
 	return 0;
@@ -238,7 +237,7 @@ static int fts_i2c_exit(struct fts_ts_data *ts_data)
  * functions body
  ****************************************************************************/
 /* spi interface */
-static int fts_spi_transfer(u8 *tx_buf, u8 *rx_buf, u32 len)
+static int fts_spi_transfer(struct fts_fts_data *fts_data, u8 *tx_buf, u8 *rx_buf, u32 len)
 {
 	int ret = 0;
 	struct spi_device *spi = fts_data->spi;
@@ -293,15 +292,14 @@ static int rdata_check(u8 *rdata, u32 rlen)
 	return 0;
 }
 
-static int fts_spi_write(u8 *writebuf, u32 writelen)
+static int fts_spi_write(struct fts_fts_data *fts_data, u8 *writebuf, u32 writelen)
 {
 	int ret = 0;
 	int i = 0;
-	struct fts_ts_data *ts_data = fts_data;
 	u8 *txbuf = NULL;
 	u8 *rxbuf = NULL;
 	u32 txlen = 0;
-	u32 txlen_need = writelen + SPI_HEADER_LENGTH + ts_data->dummy_byte;
+	u32 txlen_need = writelen + SPI_HEADER_LENGTH + fts_data->dummy_byte;
 	u32 datalen = writelen - 1;
 
 	if (!writebuf || !writelen) {
@@ -309,7 +307,7 @@ static int fts_spi_write(u8 *writebuf, u32 writelen)
 		return -EINVAL;
 	}
 
-	mutex_lock(&ts_data->bus_lock);
+	mutex_lock(&fts_data->bus_lock);
 	if (txlen_need > SPI_BUF_LENGTH) {
 		txbuf = kzalloc(txlen_need, GFP_KERNEL);
 		if (txbuf == NULL) {
@@ -325,8 +323,8 @@ static int fts_spi_write(u8 *writebuf, u32 writelen)
 			goto err_write;
 		}
 	} else {
-		txbuf = ts_data->bus_tx_buf;
-		rxbuf = ts_data->bus_rx_buf;
+		txbuf = fts_data->bus_tx_buf;
+		rxbuf = fts_data->bus_rx_buf;
 		memset(txbuf, 0x0, SPI_BUF_LENGTH);
 		memset(rxbuf, 0x0, SPI_BUF_LENGTH);
 	}
@@ -342,7 +340,7 @@ static int fts_spi_write(u8 *writebuf, u32 writelen)
 	}
 
 	for (i = 0; i < SPI_RETRY_NUMBER; i++) {
-		ret = fts_spi_transfer(txbuf, rxbuf, txlen);
+		ret = fts_spi_transfer(fts_data, txbuf, rxbuf, txlen);
 		if ((ret == 0) && ((rxbuf[3] & 0xA0) == 0))
 			break;
 
@@ -364,18 +362,18 @@ err_write:
 	}
 
 	udelay(CS_HIGH_DELAY);
-	mutex_unlock(&ts_data->bus_lock);
+	mutex_unlock(&fts_data->bus_lock);
 	return ret;
 }
 
-static int fts_spi_read(u8 *cmd, u32 cmdlen, u8 *data, u32 datalen)
+static int fts_spi_read(struct fts_fts_data *fts_data, u8 *cmd, u32 cmdlen, u8 *data, u32 datalen)
 {
 	int ret = 0;
 	int i = 0;
 	u8 *txbuf = NULL;
 	u8 *rxbuf = NULL;
 	u32 txlen = 0;
-	u32 txlen_need = datalen + SPI_HEADER_LENGTH + ts_data->dummy_byte;
+	u32 txlen_need = datalen + SPI_HEADER_LENGTH + fts_data->dummy_byte;
 	u8 ctrl = READ_CMD;
 	u32 dp = 0;
 
@@ -384,7 +382,7 @@ static int fts_spi_read(u8 *cmd, u32 cmdlen, u8 *data, u32 datalen)
 		return -EINVAL;
 	}
 
-	mutex_lock(&ts_data->bus_lock);
+	mutex_lock(&fts_data->bus_lock);
 	if (txlen_need > SPI_BUF_LENGTH) {
 		txbuf = kzalloc(txlen_need, GFP_KERNEL);
 		if (txbuf == NULL) {
@@ -400,8 +398,8 @@ static int fts_spi_read(u8 *cmd, u32 cmdlen, u8 *data, u32 datalen)
 			goto err_read;
 		}
 	} else {
-		txbuf = ts_data->bus_tx_buf;
-		rxbuf = ts_data->bus_rx_buf;
+		txbuf = fts_data->bus_tx_buf;
+		rxbuf = fts_data->bus_rx_buf;
 		memset(txbuf, 0x0, SPI_BUF_LENGTH);
 		memset(rxbuf, 0x0, SPI_BUF_LENGTH);
 	}
@@ -416,7 +414,7 @@ static int fts_spi_read(u8 *cmd, u32 cmdlen, u8 *data, u32 datalen)
 		txlen = txlen + 2;
 
 	for (i = 0; i < SPI_RETRY_NUMBER; i++) {
-		ret = fts_spi_transfer(txbuf, rxbuf, txlen);
+		ret = fts_spi_transfer(fts_data, txbuf, rxbuf, txlen);
 		if ((ret == 0) && ((rxbuf[3] & 0xA0) == 0)) {
 			memcpy(data, &rxbuf[dp], datalen);
 			/* crc check */
@@ -451,98 +449,96 @@ err_read:
 	}
 
 	udelay(CS_HIGH_DELAY);
-	mutex_unlock(&ts_data->bus_lock);
+	mutex_unlock(&fts_data->bus_lock);
 	return ret;
 }
 
-static int fts_spi_init(struct fts_ts_data *ts_data)
+static int fts_spi_init(struct fts_fts_data *fts_data)
 {
 	FTS_FUNC_ENTER();
-	ts_data->bus_tx_buf = kzalloc(SPI_BUF_LENGTH, GFP_KERNEL);
-	if (ts_data->bus_tx_buf == NULL) {
+	fts_data->bus_tx_buf = kzalloc(SPI_BUF_LENGTH, GFP_KERNEL);
+	if (fts_data->bus_tx_buf == NULL) {
 		FTS_ERROR("failed to allocate memory for bus_tx_buf");
 		return -ENOMEM;
 	}
 
-	ts_data->bus_rx_buf = kzalloc(SPI_BUF_LENGTH, GFP_KERNEL);
-	if (ts_data->bus_rx_buf == NULL) {
+	fts_data->bus_rx_buf = kzalloc(SPI_BUF_LENGTH, GFP_KERNEL);
+	if (fts_data->bus_rx_buf == NULL) {
 		FTS_ERROR("failed to allocate memory for bus_rx_buf");
 		return -ENOMEM;
 	}
 
-	ts_data->dummy_byte = SPI_DUMMY_BYTE;
+	fts_data->dummy_byte = SPI_DUMMY_BYTE;
 	FTS_FUNC_EXIT();
 	return 0;
 }
 
-static int fts_spi_exit(struct fts_ts_data *ts_data)
+static int fts_spi_exit(struct fts_fts_data *fts_data)
 {
 	FTS_FUNC_ENTER();
-	if (ts_data && ts_data->bus_tx_buf) {
-		kfree(ts_data->bus_tx_buf);
-		ts_data->bus_tx_buf = NULL;
+	if (fts_data && fts_data->bus_tx_buf) {
+		kfree(fts_data->bus_tx_buf);
+		fts_data->bus_tx_buf = NULL;
 	}
 
-	if (ts_data && ts_data->bus_rx_buf) {
-		kfree(ts_data->bus_rx_buf);
-		ts_data->bus_rx_buf = NULL;
+	if (fts_data && fts_data->bus_rx_buf) {
+		kfree(fts_data->bus_rx_buf);
+		fts_data->bus_rx_buf = NULL;
 	}
 	FTS_FUNC_EXIT();
 	return 0;
 }
 
-int fts_read(u8 *cmd, u32 cmdlen, u8 *data, u32 datalen)
+int fts_read(struct fts_fts_data *fts_data, u8 *cmd, u32 cmdlen, u8 *data, u32 datalen)
 {
 	int ret = 0;
 
-	if (ts_data->bus_type == BUS_TYPE_I2C)
-		ret = fts_i2c_read(cmd, cmdlen, data, datalen);
+	if (fts_data->bus_type == BUS_TYPE_I2C)
+		ret = fts_i2c_read(fts_data, cmd, cmdlen, data, datalen);
 	else
-		ret = fts_spi_read(cmd, cmdlen, data, datalen);
+		ret = fts_spi_read(fts_data, cmd, cmdlen, data, datalen);
 
 	return ret;
 }
 
-int fts_write(u8 *writebuf, u32 writelen)
+int fts_write(struct fts_fts_data *fts_data, u8 *writebuf, u32 writelen)
 {
 	int ret = 0;
 
-	if (ts_data->bus_type == BUS_TYPE_I2C)
-		ret = fts_i2c_write(writebuf, writelen);
+	if (fts_data->bus_type == BUS_TYPE_I2C)
+		ret = fts_i2c_write(fts_data, writebuf, writelen);
 	else
-		ret = fts_spi_write(writebuf, writelen);
+		ret = fts_spi_write(fts_data, writebuf, writelen);
 
 	return ret;
 }
 
-int fts_read_reg(u8 addr, u8 *value)
+int fts_read_reg(struct fts_fts_data *fts_data, u8 addr, u8 *value)
 {
-	return fts_read(&addr, 1, value, 1);
+	return fts_read(fts_data, &addr, 1, value, 1);
 }
 
-int fts_write_reg(u8 addr, u8 value)
+int fts_write_reg(struct fts_fts_data *fts_data, u8 addr, u8 value)
 {
 	u8 buf[2] = { 0 };
 
 	buf[0] = addr;
 	buf[1] = value;
-	return fts_write(buf, sizeof(buf));
+	return fts_write(fts_data, buf, sizeof(buf));
 }
 
-int fts_bus_init(struct fts_ts_data *_ts_data)
+int fts_bus_init(struct fts_fts_data *fts_data)
 {
-	ts_data = _ts_data;
+	if (fts_data->bus_type == BUS_TYPE_I2C)
+		return fts_i2c_init(fts_data);
 
-	if (ts_data->bus_type == BUS_TYPE_I2C)
-		return fts_i2c_init(ts_data);
-
-	return fts_spi_init(ts_data);
+	return fts_spi_init(fts_data);
 }
 
-int fts_bus_exit(struct fts_ts_data *ts_data)
+int fts_bus_exit(struct fts_fts_data *fts_data)
 {
-	if (ts_data->bus_type == BUS_TYPE_I2C)
-		return fts_i2c_exit(ts_data);
+	if (fts_data->bus_type == BUS_TYPE_I2C)
+		return fts_i2c_exit(fts_data);
 
-	return fts_spi_exit(ts_data);
+	return fts_spi_exit(fts_data);
 }
