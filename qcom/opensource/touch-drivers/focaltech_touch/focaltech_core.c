@@ -2761,9 +2761,11 @@ tvm_setup:
 	return ret;
 #endif
 
+#if FTS_UPGRADE_EN
 	ret = fts_fwupg_init(fts_data);
 	if (ret)
 		FTS_ERROR("init fw upgrade fail");
+#endif
 
 	return 0;
 
@@ -2961,7 +2963,9 @@ static int fts_ts_remove_entry(struct fts_fts_data *fts_data)
 	fts_remove_sysfs(fts_data);
 	fts_ex_mode_exit(fts_data);
 
+#if FTS_UPGRADE_EN
 	fts_fwupg_exit(fts_data);
+#endif
 
 
 #if FTS_ESDCHECK_EN
