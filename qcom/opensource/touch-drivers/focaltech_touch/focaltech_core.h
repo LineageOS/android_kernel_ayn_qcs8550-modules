@@ -143,6 +143,8 @@ struct fts_ts_platform_data {
 	u32 x_min;
 	u32 y_min;
 	u32 max_touch_number;
+	bool misconfigured_x_line_order;
+	bool misconfigured_y_line_order;
 };
 
 struct ts_event {

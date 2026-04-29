@@ -1706,8 +1706,14 @@ static int fts_input_report_b(struct fts_fts_data *data)
 				events[i].area = 0x09;
 			}
 			input_report_abs(data->input_dev, ABS_MT_TOUCH_MAJOR, events[i].area);
-			input_report_abs(data->input_dev, ABS_MT_POSITION_X, events[i].x);
-			input_report_abs(data->input_dev, ABS_MT_POSITION_Y, events[i].y);
+			if (data->pdata->misconfigured_x_line_order)
+				input_report_abs(data->input_dev, ABS_MT_POSITION_X, data->pdata->x_max - events[i].x);
+			else
+				input_report_abs(data->input_dev, ABS_MT_POSITION_X, events[i].x);
+			if (data->pdata->misconfigured_y_line_order)
+				input_report_abs(data->input_dev, ABS_MT_POSITION_Y, data->pdata->y_max - events[i].y);
+			else
+				input_report_abs(data->input_dev, ABS_MT_POSITION_Y, events[i].y);
 
 			touchs |= BIT(events[i].id);
 			data->touchs |= BIT(events[i].id);
@@ -1786,8 +1792,14 @@ static int fts_input_report_a(struct fts_fts_data *data)
 			}
 			input_report_abs(data->input_dev, ABS_MT_TOUCH_MAJOR, events[i].area);
 
-			input_report_abs(data->input_dev, ABS_MT_POSITION_X, events[i].x);
-			input_report_abs(data->input_dev, ABS_MT_POSITION_Y, events[i].y);
+			if (data->pdata->misconfigured_x_line_order)
+				input_report_abs(data->input_dev, ABS_MT_POSITION_X, data->pdata->x_max - events[i].x);
+			else
+				input_report_abs(data->input_dev, ABS_MT_POSITION_X, events[i].x);
+			if (data->pdata->misconfigured_y_line_order)
+				input_report_abs(data->input_dev, ABS_MT_POSITION_Y, data->pdata->y_max - events[i].y);
+			else
+				input_report_abs(data->input_dev, ABS_MT_POSITION_Y, events[i].y);
 
 			input_mt_sync(data->input_dev);
 
@@ -2583,6 +2595,9 @@ static int fts_parse_dt(struct device *dev, struct fts_ts_platform_data *pdata)
 		pdata->type = _FT3518;
 	else
 		pdata->type = temp_val;
+
+	pdata->misconfigured_x_line_order = of_property_read_bool(np, "focaltech,misconfigured-x-line-order");
+	pdata->misconfigured_y_line_order = of_property_read_bool(np, "focaltech,misconfigured-y-line-order");
 
 	FTS_FUNC_EXIT();
 	return 0;
