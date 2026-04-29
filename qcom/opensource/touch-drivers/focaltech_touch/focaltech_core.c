@@ -136,14 +136,19 @@ static void fts_ts_register_for_panel_events(struct device_node *dp,
 			"%s: No touch type\n", __func__);
 		return;
 	}
-	if (strcmp(touch_type, "primary")) {
+	if (strcmp(touch_type, "primary") && strcmp(touch_type, "secondary")) {
 		pr_err("Invalid touch type\n");
 		return;
 	}
 
-	cookie = panel_event_notifier_register(PANEL_EVENT_NOTIFICATION_PRIMARY,
-			PANEL_EVENT_NOTIFIER_CLIENT_PRIMARY_TOUCH, active_panel,
-			&fts_ts_panel_notifier_callback, fts_data);
+	if (!strcmp(touch_type, "primary"))
+		cookie = panel_event_notifier_register(PANEL_EVENT_NOTIFICATION_PRIMARY,
+				PANEL_EVENT_NOTIFIER_CLIENT_PRIMARY_TOUCH, active_panel,
+				&fts_ts_panel_notifier_callback, fts_data);
+	else
+		cookie = panel_event_notifier_register(PANEL_EVENT_NOTIFICATION_SECONDARY,
+				PANEL_EVENT_NOTIFIER_CLIENT_SECONDARY_TOUCH, active_panel,
+				&fts_ts_panel_notifier_callback, fts_data);
 	if (!cookie) {
 		pr_err("Failed to register for panel events\n");
 		return;
@@ -2006,6 +2011,7 @@ static int fts_input_init(struct fts_fts_data *fts_data)
 	int key_num = 0;
 	struct fts_ts_platform_data *pdata = fts_data->pdata;
 	struct input_dev *input_dev;
+	const char *touch_type;
 
 	FTS_FUNC_ENTER();
 	input_dev = input_allocate_device();
@@ -2015,7 +2021,11 @@ static int fts_input_init(struct fts_fts_data *fts_data)
 	}
 
 	/* Init and register Input device */
-	input_dev->name = FTS_DRIVER_NAME;
+	ret = of_property_read_string(fts_data->dev->of_node, "focaltech,touch-type", &touch_type);
+	if (ret || !strcmp(touch_type, "primary"))
+		input_dev->name = FTS_DRIVER_NAME;
+	else
+		input_dev->name = FTS_DRIVER_NAME "_secondary";
 	if (fts_data->bus_type == BUS_TYPE_I2C)
 		input_dev->id.bustype = BUS_I2C;
 	else
