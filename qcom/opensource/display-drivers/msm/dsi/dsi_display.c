@@ -9131,6 +9131,7 @@ void __exit dsi_display_unregister(void)
 	dsi_ctrl_drv_unregister();
 	dsi_phy_drv_unregister();
 }
+#ifndef CONFIG_DRM_MOORECHIP_HACK
 module_param_string(dsi_display0, dsi_display_primary, MAX_CMDLINE_PARAM_LEN,
 								0600);
 MODULE_PARM_DESC(dsi_display0,
@@ -9139,3 +9140,13 @@ module_param_string(dsi_display1, dsi_display_secondary, MAX_CMDLINE_PARAM_LEN,
 								0600);
 MODULE_PARM_DESC(dsi_display1,
 	"msm_drm.dsi_display1=<display node>:<configX> where <display node> is 'secondary dsi display node name' and <configX> where x represents index in the topology list");
+#else
+module_param_string(moorechip_dsi_display0, dsi_display_primary, MAX_CMDLINE_PARAM_LEN,
+								0600);
+MODULE_PARM_DESC(moorechip_dsi_display0,
+	"msm_drm.moorechip_dsi_display0=<display node>:<configX> where <display node> is 'primary dsi display node name' and <configX> where x represents index in the topology list");
+module_param_string(moorechip_dsi_display1, dsi_display_secondary, MAX_CMDLINE_PARAM_LEN,
+								0600);
+MODULE_PARM_DESC(moorechip_dsi_display1,
+	"msm_drm.moorechip_dsi_display1=<display node>:<configX> where <display node> is 'secondary dsi display node name' and <configX> where x represents index in the topology list");
+#endif
