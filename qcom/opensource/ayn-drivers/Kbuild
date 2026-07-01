@@ -2,7 +2,7 @@
 KDIR := $(TOP)/kernel_platform/common
 
 ifeq ($(CONFIG_ARCH_KALAMA), y)
-	include $(AYN_ROOT)/config/gki_ayn.conf
+	include $(AYN_ROOT)/config/gki_kalamaayn.conf
 	LINUX_INC += -include $(AYN_ROOT)/config/gki_kalamaaynconf.h
 endif
 
