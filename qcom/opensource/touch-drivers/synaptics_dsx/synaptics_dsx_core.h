@@ -376,6 +376,7 @@ struct synaptics_rmi4_data {
 	struct pinctrl_state *pinctrl_state_release;
 	struct notifier_block fb_notifier;
 	struct work_struct reset_work;
+	struct work_struct resume_work;
 	struct workqueue_struct *reset_workqueue;
 #ifdef CONFIG_HAS_EARLYSUSPEND
 	struct early_suspend early_suspend;

@@ -50,24 +50,10 @@
 /*****************************************************************************
 * Private enumerations, structures and unions using typedef
 *****************************************************************************/
-struct fts_esdcheck_st {
-	u8  mode                : 1;    /* 1- need check esd 0- no esd check */
-	u8  suspend             : 1;
-	u8  proc_debug          : 1;    /* apk or adb use */
-	u8  intr                : 1;    /* 1- Interrupt trigger */
-	u8  unused              : 4;
-	u8  intr_cnt;
-	u8  flow_work_hold_cnt;         /* Flow Work Cnt(reg0x91) keep a same value for x times. >=5 times is ESD, need reset */
-	u8  flow_work_cnt_last;         /* Save Flow Work Cnt(reg0x91) value */
-	u32 hardware_reset_cnt;
-	u32 nack_cnt;
-	u32 dataerror_cnt;
-};
 
 /*****************************************************************************
 * Static variables
 *****************************************************************************/
-static struct fts_esdcheck_st fts_esdcheck_data;
 
 /*****************************************************************************
 * Global variable or extern global variabls/functions
@@ -83,7 +69,7 @@ static struct fts_esdcheck_st fts_esdcheck_data;
 #if LCD_ESD_PATCH
 int lcd_need_reset;
 static int tp_need_recovery; /* LCD reset cause Tp reset */
-int idc_esdcheck_lcderror(struct fts_ts_data *ts_data)
+int idc_esdcheck_lcderror(struct fts_fts_data *fts_data)
 {
 	int ret = 0;
 	u8 val = 0;
@@ -92,11 +78,11 @@ int idc_esdcheck_lcderror(struct fts_ts_data *ts_data)
 	if ( (tp_need_recovery == 1) && (lcd_need_reset == 0) ) {
 		tp_need_recovery = 0;
 		/* LCD reset, need recover TP state */
-		fts_release_all_finger();
-		fts_tp_state_recovery(ts_data);
+		fts_release_all_finger(fts_data);
+		fts_tp_state_recovery(fts_data);
 	}
 
-	ret = fts_read_reg(FTS_REG_ESD_SATURATE, &val);
+	ret = fts_read_reg(fts_data, FTS_REG_ESD_SATURATE, &val);
 	if ( ret < 0) {
 		FTS_ERROR("read reg0xED fail,ret:%d", ret);
 		return -EIO;
@@ -117,41 +103,41 @@ int idc_esdcheck_lcderror(struct fts_ts_data *ts_data)
 }
 #endif
 
-static int fts_esdcheck_tp_reset(struct fts_ts_data *ts_data)
+static int fts_esdcheck_tp_reset(struct fts_fts_data *fts_data)
 {
 	FTS_FUNC_ENTER();
 
-	fts_esdcheck_data.flow_work_hold_cnt = 0;
-	fts_esdcheck_data.hardware_reset_cnt++;
+	fts_data->fts_esdcheck_data.flow_work_hold_cnt = 0;
+	fts_data->fts_esdcheck_data.hardware_reset_cnt++;
 
-	fts_reset_proc(200);
-	fts_release_all_finger();
-	fts_tp_state_recovery(ts_data);
+	fts_reset_proc(fts_data, 200);
+	fts_release_all_finger(fts_data);
+	fts_tp_state_recovery(fts_data);
 
 	FTS_FUNC_EXIT();
 	return 0;
 }
 
-static bool get_chip_id(struct fts_ts_data *ts_data)
+static bool get_chip_id(struct fts_fts_data *fts_data)
 {
 	int ret = 0;
 	int i = 0;
 	u8 reg_value = 0;
 	u8 reg_addr = 0;
-	u8 chip_id = ts_data->ic_info.ids.chip_idh;
+	u8 chip_id = fts_data->ic_info.ids.chip_idh;
 
 	for (i = 0; i < 3; i++) {
 		reg_addr = FTS_REG_CHIP_ID;
-		ret = fts_read(&reg_addr, 1, &reg_value, 1);
+		ret = fts_read(fts_data, &reg_addr, 1, &reg_value, 1);
 		if (ret < 0) {
 			FTS_ERROR("read chip id fail,ret:%d", ret);
-			fts_esdcheck_data.nack_cnt++;
+			fts_data->fts_esdcheck_data.nack_cnt++;
 		} else {
 			if (reg_value == chip_id) {
 				break;
 			} else {
 				FTS_DEBUG("read chip_id:%x,retry:%d", reg_value, i);
-				fts_esdcheck_data.dataerror_cnt++;
+				fts_data->fts_esdcheck_data.dataerror_cnt++;
 			}
 		}
 		msleep(10);
@@ -174,31 +160,31 @@ static bool get_chip_id(struct fts_ts_data *ts_data)
 *  Return:  1(true) - Reg 0x91(flow cnt) abnormal: hold a value for 5 times
 *           0(false) - Reg 0x91(flow cnt) normal
 *****************************************************************************/
-static bool get_flow_cnt(struct fts_ts_data *ts_data)
+static bool get_flow_cnt(struct fts_fts_data *fts_data)
 {
 	int ret = 0;
 	u8  reg_value = 0;
 	u8  reg_addr = 0;
 
 	reg_addr = FTS_REG_FLOW_WORK_CNT;
-	ret = fts_read(&reg_addr, 1, &reg_value, 1);
+	ret = fts_read(fts_data, &reg_addr, 1, &reg_value, 1);
 	if (ret < 0) {
 		FTS_ERROR("read reg0x91 fail,ret:%d", ret);
-		fts_esdcheck_data.nack_cnt++;
+		fts_data->fts_esdcheck_data.nack_cnt++;
 	} else {
-		if ( reg_value == fts_esdcheck_data.flow_work_cnt_last ) {
+		if ( reg_value == fts_data->fts_esdcheck_data.flow_work_cnt_last ) {
 			FTS_DEBUG("reg0x91,val:%x,last:%x", reg_value,
-				fts_esdcheck_data.flow_work_cnt_last);
-			fts_esdcheck_data.flow_work_hold_cnt++;
+				fts_data->fts_esdcheck_data.flow_work_cnt_last);
+			fts_data->fts_esdcheck_data.flow_work_hold_cnt++;
 		} else {
-			fts_esdcheck_data.flow_work_hold_cnt = 0;
+			fts_data->fts_esdcheck_data.flow_work_hold_cnt = 0;
 		}
 
-		fts_esdcheck_data.flow_work_cnt_last = reg_value;
+		fts_data->fts_esdcheck_data.flow_work_cnt_last = reg_value;
 	}
 
 		/* Flow Work Cnt keep a value for 5 times, need execute TP reset */
-	if (fts_esdcheck_data.flow_work_hold_cnt >= 5) {
+	if (fts_data->fts_esdcheck_data.flow_work_hold_cnt >= 5) {
 		FTS_DEBUG("reg0x91 keep a value for 5 times, need execute TP reset");
 		return true;
 	}
@@ -206,7 +192,7 @@ static bool get_flow_cnt(struct fts_ts_data *ts_data)
 	return false;
 }
 
-static int esdcheck_algorithm(struct fts_ts_data *ts_data)
+static int esdcheck_algorithm(struct fts_fts_data *fts_data)
 {
 	int  ret = 0;
 	u8   reg_value = 0;
@@ -214,16 +200,16 @@ static int esdcheck_algorithm(struct fts_ts_data *ts_data)
 	bool hardware_reset = 0;
 
 	/* 1. esdcheck is interrupt, then return */
-	if (fts_esdcheck_data.intr == 1) {
-		fts_esdcheck_data.intr_cnt++;
-		if (fts_esdcheck_data.intr_cnt > ESDCHECK_INTRCNT_MAX)
-			fts_esdcheck_data.intr = 0;
+	if (fts_data->fts_esdcheck_data.intr == 1) {
+		fts_data->fts_esdcheck_data.intr_cnt++;
+		if (fts_data->fts_esdcheck_data.intr_cnt > ESDCHECK_INTRCNT_MAX)
+			fts_data->fts_esdcheck_data.intr = 0;
 		else
 			return 0;
 	}
 
 	/* 2. check power state, if suspend, no need check esd */
-	if (fts_esdcheck_data.suspend == 1) {
+	if (fts_data->fts_esdcheck_data.suspend == 1) {
 		FTS_DEBUG("In suspend, not check esd");
 		/* because in suspend state, adb can be used, when upgrade FW, will
 		 * active ESD check(active = 1); But in suspend, then will don't
@@ -233,16 +219,16 @@ static int esdcheck_algorithm(struct fts_ts_data *ts_data)
 	}
 
 	/* 3. check fts_esdcheck_data.proc_debug state, if 1-proc busy, no need check esd*/
-	if (fts_esdcheck_data.proc_debug == 1) {
+	if (fts_data->fts_esdcheck_data.proc_debug == 1) {
 		FTS_INFO("In apk/adb command mode, not check esd");
 		return 0;
 	}
 
 	/* 4. In factory mode, can't check esd */
 	reg_addr = FTS_REG_WORKMODE;
-	ret = fts_read_reg(reg_addr, &reg_value);
+	ret = fts_read_reg(fts_data, reg_addr, &reg_value);
 	if ( ret < 0 ) {
-		fts_esdcheck_data.nack_cnt++;
+		fts_data->fts_esdcheck_data.nack_cnt++;
 	} else if ( (reg_value & 0x70) !=  FTS_REG_WORKMODE_WORK_VALUE) {
 		FTS_DEBUG("not in work mode(%x), no check esd", reg_value);
 		return 0;
@@ -250,24 +236,24 @@ static int esdcheck_algorithm(struct fts_ts_data *ts_data)
 
 	/* 5. IDC esd check lcd  default:close */
 #if LCD_ESD_PATCH
-	idc_esdcheck_lcderror(ts_data);
+	idc_esdcheck_lcderror(fts_data);
 #endif
 
 	/* 6. Get Chip ID */
-	hardware_reset = get_chip_id(ts_data);
+	hardware_reset = get_chip_id(fts_data);
 
 	/* 7. get Flow work cnt: 0x91 If no change for 5 times, then ESD and reset */
 	if (!hardware_reset) {
-		hardware_reset = get_flow_cnt(ts_data);
+		hardware_reset = get_flow_cnt(fts_data);
 	}
 
 	/* 8. If need hardware reset, then handle it here */
 	if (hardware_reset == 1) {
 		FTS_DEBUG("NoACK=%d, Error Data=%d, Hardware Reset=%d",
-				fts_esdcheck_data.nack_cnt,
-				fts_esdcheck_data.dataerror_cnt,
-				fts_esdcheck_data.hardware_reset_cnt);
-		fts_esdcheck_tp_reset(ts_data);
+				fts_data->fts_esdcheck_data.nack_cnt,
+				fts_data->fts_esdcheck_data.dataerror_cnt,
+				fts_data->fts_esdcheck_data.hardware_reset_cnt);
+		fts_esdcheck_tp_reset(fts_data);
 	}
 
 	return 0;
@@ -275,29 +261,29 @@ static int esdcheck_algorithm(struct fts_ts_data *ts_data)
 
 static void esdcheck_func(struct work_struct *work)
 {
-	struct fts_ts_data *ts_data = container_of(work,
-					struct fts_ts_data, esdcheck_work.work);
+	struct fts_fts_data *fts_data = container_of(work,
+					struct fts_fts_data, esdcheck_work.work);
 
-	if (ENABLE == fts_esdcheck_data.mode) {
-		esdcheck_algorithm(ts_data);
-		queue_delayed_work(ts_data->ts_workqueue,
-				&ts_data->esdcheck_work,
+	if (ENABLE == fts_data->fts_esdcheck_data.mode) {
+		esdcheck_algorithm(fts_data);
+		queue_delayed_work(fts_data->ts_workqueue,
+				&fts_data->esdcheck_work,
 				msecs_to_jiffies(ESDCHECK_WAIT_TIME));
 	}
 }
 
-int fts_esdcheck_set_intr(bool intr)
+int fts_esdcheck_set_intr(struct fts_fts_data *fts_data, bool intr)
 {
 	/* interrupt don't add debug message */
-	fts_esdcheck_data.intr = intr;
-	fts_esdcheck_data.intr_cnt = (u8)intr;
+	fts_data->fts_esdcheck_data.intr = intr;
+	fts_data->fts_esdcheck_data.intr_cnt = (u8)intr;
 	return 0;
 }
 
-static int fts_esdcheck_get_status(void)
+static int fts_esdcheck_get_status(struct fts_fts_data *fts_data)
 {
 	/* interrupt don't add debug message */
-	return fts_esdcheck_data.mode;
+	return fts_data->fts_esdcheck_data.mode;
 }
 
 /*****************************************************************************
@@ -308,9 +294,9 @@ static int fts_esdcheck_get_status(void)
 *  Output:
 *  Return:
 *****************************************************************************/
-int fts_esdcheck_proc_busy(bool proc_debug)
+int fts_esdcheck_proc_busy(struct fts_fts_data *fts_data, bool proc_debug)
 {
-	fts_esdcheck_data.proc_debug = proc_debug;
+	fts_data->fts_esdcheck_data.proc_debug = proc_debug;
 	return 0;
 }
 
@@ -322,23 +308,22 @@ int fts_esdcheck_proc_busy(bool proc_debug)
 *  Output:
 *  Return:
 *****************************************************************************/
-int fts_esdcheck_switch(bool enable)
+int fts_esdcheck_switch(struct fts_fts_data *fts_data, bool enable)
 {
-	struct fts_ts_data *ts_data = fts_data;
 	FTS_FUNC_ENTER();
-	if (fts_esdcheck_data.mode == ENABLE) {
+	if (fts_data->fts_esdcheck_data.mode == ENABLE) {
 		if (enable) {
 			FTS_DEBUG("ESD check start");
-			fts_esdcheck_data.flow_work_hold_cnt = 0;
-			fts_esdcheck_data.flow_work_cnt_last = 0;
-			fts_esdcheck_data.intr = 0;
-			fts_esdcheck_data.intr_cnt = 0;
-			queue_delayed_work(ts_data->ts_workqueue,
-					&ts_data->esdcheck_work,
+			fts_data->fts_esdcheck_data.flow_work_hold_cnt = 0;
+			fts_data->fts_esdcheck_data.flow_work_cnt_last = 0;
+			fts_data->fts_esdcheck_data.intr = 0;
+			fts_data->fts_esdcheck_data.intr_cnt = 0;
+			queue_delayed_work(fts_data->ts_workqueue,
+					&fts_data->esdcheck_work,
 					msecs_to_jiffies(ESDCHECK_WAIT_TIME));
 		} else {
 			FTS_DEBUG("ESD check stop");
-			cancel_delayed_work_sync(&ts_data->esdcheck_work);
+			cancel_delayed_work_sync(&fts_data->esdcheck_work);
 		}
 	}
 
@@ -346,24 +331,24 @@ int fts_esdcheck_switch(bool enable)
 	return 0;
 }
 
-int fts_esdcheck_suspend(void)
+int fts_esdcheck_suspend(struct fts_fts_data *fts_data)
 {
 	FTS_FUNC_ENTER();
-	fts_esdcheck_switch(DISABLE);
-	fts_esdcheck_data.suspend = 1;
-	fts_esdcheck_data.intr = 0;
-	fts_esdcheck_data.intr_cnt = 0;
+	fts_esdcheck_switch(fts_data, DISABLE);
+	fts_data->fts_esdcheck_data.suspend = 1;
+	fts_data->fts_esdcheck_data.intr = 0;
+	fts_data->fts_esdcheck_data.intr_cnt = 0;
 	FTS_FUNC_EXIT();
 	return 0;
 }
 
-int fts_esdcheck_resume( void )
+int fts_esdcheck_resume(struct fts_fts_data *fts_data)
 {
 	FTS_FUNC_ENTER();
-	fts_esdcheck_switch(ENABLE);
-	fts_esdcheck_data.suspend = 0;
-	fts_esdcheck_data.intr = 0;
-	fts_esdcheck_data.intr_cnt = 0;
+	fts_esdcheck_switch(fts_data, ENABLE);
+	fts_data->fts_esdcheck_data.suspend = 0;
+	fts_data->fts_esdcheck_data.intr = 0;
+	fts_data->fts_esdcheck_data.intr_cnt = 0;
 	FTS_FUNC_EXIT();
 	return 0;
 }
@@ -372,17 +357,18 @@ static ssize_t fts_esdcheck_store(
 	struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
+	struct fts_fts_data *fts_data = dev_get_drvdata(dev);
 	struct input_dev *input_dev = fts_data->input_dev;
 
 	mutex_lock(&input_dev->mutex);
 	if (FTS_SYSFS_ECHO_ON(buf)) {
 		FTS_DEBUG("enable esdcheck");
-		fts_esdcheck_data.mode = ENABLE;
-		fts_esdcheck_switch(ENABLE);
+		fts_data->fts_esdcheck_data.mode = ENABLE;
+		fts_esdcheck_switch(fts_data, ENABLE);
 	} else if (FTS_SYSFS_ECHO_OFF(buf)) {
 		FTS_DEBUG("disable esdcheck");
-		fts_esdcheck_switch(DISABLE);
-		fts_esdcheck_data.mode = DISABLE;
+		fts_esdcheck_switch(fts_data, DISABLE);
+		fts_data->fts_esdcheck_data.mode = DISABLE;
 	}
 	mutex_unlock(&input_dev->mutex);
 
@@ -392,12 +378,13 @@ static ssize_t fts_esdcheck_store(
 static ssize_t fts_esdcheck_show(
 	struct device *dev, struct device_attribute *attr, char *buf)
 {
-	int count;
+	struct fts_fts_data *fts_data = dev_get_drvdata(dev);
 	struct input_dev *input_dev = fts_data->input_dev;
+	int count;
 
 	mutex_lock(&input_dev->mutex);
 	count = snprintf(buf, PAGE_SIZE, "Esd check: %s\n", \
-			fts_esdcheck_get_status() ? "On" : "Off");
+			fts_esdcheck_get_status(fts_data) ? "On" : "Off");
 	mutex_unlock(&input_dev->mutex);
 
 	return count;
@@ -433,31 +420,31 @@ int fts_create_esd_sysfs(struct device *dev)
 	return 0;
 }
 
-int fts_esdcheck_init(struct fts_ts_data *ts_data)
+int fts_esdcheck_init(struct fts_fts_data *fts_data)
 {
 	FTS_FUNC_ENTER();
 
-	if (ts_data->ts_workqueue) {
-		INIT_DELAYED_WORK(&ts_data->esdcheck_work, esdcheck_func);
+	if (fts_data->ts_workqueue) {
+		INIT_DELAYED_WORK(&fts_data->esdcheck_work, esdcheck_func);
 	} else {
 		FTS_ERROR("fts workqueue is NULL, can't run esd check func!");
 		return -EINVAL;
 	}
 
-	memset((u8 *)&fts_esdcheck_data, 0, sizeof(struct fts_esdcheck_st));
+	memset((u8 *)&fts_data->fts_esdcheck_data, 0, sizeof(struct fts_esdcheck_st));
 
-	fts_esdcheck_data.mode = ENABLE;
-	fts_esdcheck_data.intr = 0;
-	fts_esdcheck_data.intr_cnt = 0;
-	fts_esdcheck_switch(ENABLE);
-	fts_create_esd_sysfs(ts_data->dev);
+	fts_data->fts_esdcheck_data.mode = ENABLE;
+	fts_data->fts_esdcheck_data.intr = 0;
+	fts_data->fts_esdcheck_data.intr_cnt = 0;
+	fts_esdcheck_switch(fts_data, ENABLE);
+	fts_create_esd_sysfs(fts_data->dev);
 	FTS_FUNC_EXIT();
 	return 0;
 }
 
-int fts_esdcheck_exit(struct fts_ts_data *ts_data)
+int fts_esdcheck_exit(struct fts_fts_data *fts_data)
 {
-	sysfs_remove_group(&ts_data->dev->kobj, &fts_esd_group);
+	sysfs_remove_group(&fts_data->dev->kobj, &fts_esd_group);
 	return 0;
 }
 

@@ -70,27 +70,10 @@
 /*****************************************************************************
 * Private enumerations, structures and unions using typedef
 *****************************************************************************/
-/*
-* gesture_id    - mean which gesture is recognised
-* point_num     - points number of this gesture
-* coordinate_x  - All gesture point x coordinate
-* coordinate_y  - All gesture point y coordinate
-* mode          - gesture enable/disable, need enable by host
-*               - 1:enable gesture function(default)  0:disable
-* active        - gesture work flag,
-*                 always set 1 when suspend, set 0 when resume
-*/
-struct fts_gesture_st {
-	u8 gesture_id;
-	u8 point_num;
-	u16 coordinate_x[FTS_GESTURE_POINTS_MAX];
-	u16 coordinate_y[FTS_GESTURE_POINTS_MAX];
-};
 
 /*****************************************************************************
 * Static variables
 *****************************************************************************/
-static struct fts_gesture_st fts_gesture_data;
 
 /*****************************************************************************
 * Global variable or extern global variabls/functions
@@ -102,16 +85,16 @@ static struct fts_gesture_st fts_gesture_data;
 static ssize_t fts_gesture_show(
 	struct device *dev, struct device_attribute *attr, char *buf)
 {
+	struct fts_fts_data *fts_data = dev_get_drvdata(dev);
 	int count = 0;
 	u8 val = 0;
-	struct fts_ts_data *ts_data = fts_data;
 
-	mutex_lock(&ts_data->input_dev->mutex);
-	fts_read_reg(FTS_REG_GESTURE_EN, &val);
+	mutex_lock(&fts_data->input_dev->mutex);
+	fts_read_reg(fts_data, FTS_REG_GESTURE_EN, &val);
 	count = snprintf(buf, PAGE_SIZE, "Gesture Mode:%s\n",
-			ts_data->gesture_mode ? "On" : "Off");
+			fts_data->gesture_mode ? "On" : "Off");
 	count += snprintf(buf + count, PAGE_SIZE, "Reg(0xD0)=%d\n", val);
-	mutex_unlock(&ts_data->input_dev->mutex);
+	mutex_unlock(&fts_data->input_dev->mutex);
 
 	return count;
 }
@@ -120,17 +103,17 @@ static ssize_t fts_gesture_store(
 	struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
-	struct fts_ts_data *ts_data = fts_data;
+	struct fts_fts_data *fts_data = dev_get_drvdata(dev);
 
-	mutex_lock(&ts_data->input_dev->mutex);
+	mutex_lock(&fts_data->input_dev->mutex);
 	if (FTS_SYSFS_ECHO_ON(buf)) {
 		FTS_DEBUG("enable gesture");
-		ts_data->gesture_mode = ENABLE;
+		fts_data->gesture_mode = ENABLE;
 	} else if (FTS_SYSFS_ECHO_OFF(buf)) {
 		FTS_DEBUG("disable gesture");
-		ts_data->gesture_mode = DISABLE;
+		fts_data->gesture_mode = DISABLE;
 	}
-	mutex_unlock(&ts_data->input_dev->mutex);
+	mutex_unlock(&fts_data->input_dev->mutex);
 
 	return count;
 }
@@ -138,10 +121,11 @@ static ssize_t fts_gesture_store(
 static ssize_t fts_gesture_buf_show(
 	struct device *dev, struct device_attribute *attr, char *buf)
 {
+	struct fts_fts_data *fts_data = dev_get_drvdata(dev);
+	struct input_dev *input_dev = fts_data->input_dev;
+	struct fts_gesture_st *gesture = &fts_data->fts_gesture_data;
 	int count = 0;
 	int i = 0;
-	struct input_dev *input_dev = fts_data->input_dev;
-	struct fts_gesture_st *gesture = &fts_gesture_data;
 
 	mutex_lock(&input_dev->mutex);
 	count = snprintf(buf, PAGE_SIZE, "Gesture ID:%d\n", gesture->gesture_id);
@@ -293,35 +277,34 @@ static void fts_gesture_report(struct input_dev *input_dev, int gesture_id)
 *        It will be called this function every intrrupt when FTS_GESTURE_EN = 1
 *
 *        gesture data length: 1(enable) + 1(reserve) + 2(header) + 6 * 4
-* Input: ts_data - global struct data
+* Input: fts_data - global struct data
 *        data    - gesture data buffer if non-flash, else NULL
 * Output:
 * Return: 0 - read gesture data successfully, the report data is gesture data
 *         1 - tp not in suspend/gesture not enable in TP FW
 *         -Exx - error
 *****************************************************************************/
-int fts_gesture_readdata(struct fts_ts_data *ts_data, u8 *data)
+int fts_gesture_readdata(struct fts_fts_data *fts_data, u8 *data)
 {
 	int ret = 0;
 	int i = 0;
 	int index = 0;
 	u8 buf[FTS_GESTURE_DATA_LEN] = { 0 };
-	struct input_dev *input_dev = ts_data->input_dev;
-	struct fts_gesture_st *gesture = &fts_gesture_data;
+	struct input_dev *input_dev = fts_data->input_dev;
+	struct fts_gesture_st *gesture = &fts_data->fts_gesture_data;
 
-	if (!ts_data->suspended || !ts_data->gesture_mode) {
+	if (!fts_data->suspended || !fts_data->gesture_mode) {
 		return 1;
 	}
 
-
-	ret = fts_read_reg(FTS_REG_GESTURE_EN, &buf[0]);
+	ret = fts_read_reg(fts_data, FTS_REG_GESTURE_EN, &buf[0]);
 	if ((ret < 0) || (buf[0] != ENABLE)) {
 		FTS_DEBUG("gesture not enable in fw, don't process gesture");
 		return 1;
 	}
 
 	buf[2] = FTS_REG_GESTURE_OUTPUT_ADDRESS;
-	ret = fts_read(&buf[2], 1, &buf[2], FTS_GESTURE_DATA_LEN - 2);
+	ret = fts_read(fts_data, &buf[2], 1, &buf[2], FTS_GESTURE_DATA_LEN - 2);
 	if (ret < 0) {
 		FTS_ERROR("read gesture header data fail");
 		return ret;
@@ -349,40 +332,40 @@ int fts_gesture_readdata(struct fts_ts_data *ts_data, u8 *data)
 	return 0;
 }
 
-void fts_gesture_recovery(struct fts_ts_data *ts_data)
+void fts_gesture_recovery(struct fts_fts_data *fts_data)
 {
-	if (ts_data->gesture_mode && ts_data->suspended) {
+	if (fts_data->gesture_mode && fts_data->suspended) {
 		FTS_DEBUG("gesture recovery...");
-		fts_write_reg(0xD1, 0xFF);
-		fts_write_reg(0xD2, 0xFF);
-		fts_write_reg(0xD5, 0xFF);
-		fts_write_reg(0xD6, 0xFF);
-		fts_write_reg(0xD7, 0xFF);
-		fts_write_reg(0xD8, 0xFF);
-		fts_write_reg(FTS_REG_GESTURE_EN, ENABLE);
+		fts_write_reg(fts_data, 0xD1, 0xFF);
+		fts_write_reg(fts_data, 0xD2, 0xFF);
+		fts_write_reg(fts_data, 0xD5, 0xFF);
+		fts_write_reg(fts_data, 0xD6, 0xFF);
+		fts_write_reg(fts_data, 0xD7, 0xFF);
+		fts_write_reg(fts_data, 0xD8, 0xFF);
+		fts_write_reg(fts_data, FTS_REG_GESTURE_EN, ENABLE);
 	}
 }
 
-int fts_gesture_suspend(struct fts_ts_data *ts_data)
+int fts_gesture_suspend(struct fts_fts_data *fts_data)
 {
 	int i = 0;
 	u8 state = 0xFF;
 
 	FTS_FUNC_ENTER();
-	if (enable_irq_wake(ts_data->irq)) {
-		FTS_DEBUG("enable_irq_wake(irq:%d) fail", ts_data->irq);
+	if (enable_irq_wake(fts_data->irq)) {
+		FTS_DEBUG("enable_irq_wake(irq:%d) fail", fts_data->irq);
 	}
 
 	for (i = 0; i < 5; i++) {
-		fts_write_reg(0xD1, 0xFF);
-		fts_write_reg(0xD2, 0xFF);
-		fts_write_reg(0xD5, 0xFF);
-		fts_write_reg(0xD6, 0xFF);
-		fts_write_reg(0xD7, 0xFF);
-		fts_write_reg(0xD8, 0xFF);
-		fts_write_reg(FTS_REG_GESTURE_EN, ENABLE);
+		fts_write_reg(fts_data, 0xD1, 0xFF);
+		fts_write_reg(fts_data, 0xD2, 0xFF);
+		fts_write_reg(fts_data, 0xD5, 0xFF);
+		fts_write_reg(fts_data, 0xD6, 0xFF);
+		fts_write_reg(fts_data, 0xD7, 0xFF);
+		fts_write_reg(fts_data, 0xD8, 0xFF);
+		fts_write_reg(fts_data, FTS_REG_GESTURE_EN, ENABLE);
 		msleep(1);
-		fts_read_reg(FTS_REG_GESTURE_EN, &state);
+		fts_read_reg(fts_data, FTS_REG_GESTURE_EN, &state);
 		if (state == ENABLE)
 			break;
 	}
@@ -396,20 +379,20 @@ int fts_gesture_suspend(struct fts_ts_data *ts_data)
 	return 0;
 }
 
-int fts_gesture_resume(struct fts_ts_data *ts_data)
+int fts_gesture_resume(struct fts_fts_data *fts_data)
 {
 	int i = 0;
 	u8 state = 0xFF;
 
 	FTS_FUNC_ENTER();
-	if (disable_irq_wake(ts_data->irq)) {
-		FTS_DEBUG("disable_irq_wake(irq:%d) fail", ts_data->irq);
+	if (disable_irq_wake(fts_data->irq)) {
+		FTS_DEBUG("disable_irq_wake(irq:%d) fail", fts_data->irq);
 	}
 
 	for (i = 0; i < 5; i++) {
-		fts_write_reg(FTS_REG_GESTURE_EN, DISABLE);
+		fts_write_reg(fts_data, FTS_REG_GESTURE_EN, DISABLE);
 		msleep(1);
-		fts_read_reg(FTS_REG_GESTURE_EN, &state);
+		fts_read_reg(fts_data, FTS_REG_GESTURE_EN, &state);
 		if (state == DISABLE)
 			break;
 	}
@@ -423,9 +406,9 @@ int fts_gesture_resume(struct fts_ts_data *ts_data)
 	return 0;
 }
 
-int fts_gesture_init(struct fts_ts_data *ts_data)
+int fts_gesture_init(struct fts_fts_data *fts_data)
 {
-	struct input_dev *input_dev = ts_data->input_dev;
+	struct input_dev *input_dev = fts_data->input_dev;
 
 	FTS_FUNC_ENTER();
 	input_set_capability(input_dev, EV_KEY, KEY_POWER);
@@ -459,19 +442,19 @@ int fts_gesture_init(struct fts_ts_data *ts_data)
 	__set_bit(KEY_GESTURE_C, input_dev->keybit);
 	__set_bit(KEY_GESTURE_Z, input_dev->keybit);
 
-	fts_create_gesture_sysfs(ts_data->dev);
+	fts_create_gesture_sysfs(fts_data->dev);
 
-	memset(&fts_gesture_data, 0, sizeof(struct fts_gesture_st));
-	ts_data->gesture_mode = FTS_GESTURE_EN;
+	memset(&fts_data->fts_gesture_data, 0, sizeof(struct fts_gesture_st));
+	fts_data->gesture_mode = FTS_GESTURE_EN;
 
 	FTS_FUNC_EXIT();
 	return 0;
 }
 
-int fts_gesture_exit(struct fts_ts_data *ts_data)
+int fts_gesture_exit(struct fts_fts_data *fts_data)
 {
 	FTS_FUNC_ENTER();
-	sysfs_remove_group(&ts_data->dev->kobj, &fts_gesture_group);
+	sysfs_remove_group(&fts_data->dev->kobj, &fts_gesture_group);
 	FTS_FUNC_EXIT();
 	return 0;
 }
