@@ -111,24 +111,6 @@ ifeq ($(CONFIG_QTS_ENABLE), y)
 	obj-$(CONFIG_MSM_TOUCH) += qts.o
 endif
 
-ifeq ($(CONFIG_TOUCHSCREEN_HYNITRON_TS), y)
-	LINUX_INC += -include $(TOUCH_ROOT)/hynitron/hynitron_common.h
-	LINUX_INC += -include $(TOUCH_ROOT)/hynitron/hynitron_config.h
-	LINUX_INC += -include $(TOUCH_ROOT)/hynitron/hynitron_core.h
-	LINUX_INC += -include $(TOUCH_ROOT)/hynitron/hynitron_update_firmware.h
-
-	hynitron-y := \
-		 ./hynitron/hynitron_core.o \
-		 ./hynitron/hynitron_i2c.o \
-		 ./hynitron/hynitron_esd_check.o \
-		 ./hynitron/hynitron_tool_debug.o \
-		 ./hynitron/hynitron_update_firmware.o \
-		 ./hynitron/hynitron_gesture.o \
-		 ./hynitron/hynitron_proximity.o
-
-	obj-$(CONFIG_MSM_TOUCH) += hynitron.o
-endif
-
 ifeq ($(CONFIG_TOUCH_FOCALTECH), y)
 	LINUX_INC += -include $(TOUCH_ROOT)/focaltech_touch/focaltech_common.h
 	LINUX_INC += -include $(TOUCH_ROOT)/focaltech_touch/focaltech_config.h
@@ -144,8 +126,7 @@ ifeq ($(CONFIG_TOUCH_FOCALTECH), y)
 		 ./focaltech_touch/focaltech_point_report_check.o \
 		 ./focaltech_touch/focaltech_i2c.o \
 		 ./focaltech_touch/focaltech_flash.o \
-		 ./focaltech_touch/focaltech_flash/focaltech_upgrade_ft3518.o \
-		 ./focaltech_touch/focaltech_flash/focaltech_upgrade_ft3519.o
+		 ./focaltech_touch/focaltech_flash/focaltech_upgrade_ft3518.o
 
 	obj-$(CONFIG_MSM_TOUCH) += focaltech_fts.o
 endif
@@ -278,3 +259,5 @@ ifneq ($(CONFIG_ARCH_PINEAPPLE), y)
 			obj-$(CONFIG_MSM_TOUCH) += raydium_ts.o
 	endif
 endif # pineapple
+
+CDEFINES += -DBUILD_TIMESTAMP=\"$(shell date -u +'%Y-%m-%dT%H:%M:%SZ')\"
