@@ -3,7 +3,11 @@ TOUCH_ROOT=$(ROOTDIR)vendor/qcom/opensource/touch-drivers
 KBUILD_OPTIONS := TOUCH_ROOT=$(TOUCH_ROOT) CONFIG_MSM_TOUCH=m
 
 ifeq ($(TARGET_SUPPORT),genericarmv8)
-	KBUILD_OPTIONS += CONFIG_ARCH_KALAMA=y
+	KBUILD_OPTIONS += CONFIG_ARCH_WAIPIO=y
+endif
+
+ifeq ($(TARGET_SUPPORT),genericarmv8)
+	KBUILD_OPTIONS += CONFIG_ARCH_PINEAPPLE=y
 endif
 
 all:
